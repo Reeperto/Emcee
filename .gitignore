@@ -1,0 +1,4 @@
+*.dSYM
+.DS_Store
+emcee
+compile_commands.json
