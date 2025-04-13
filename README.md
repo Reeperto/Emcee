@@ -15,4 +15,4 @@ make emcee_tests
 ```
 
 ## ⚠️ Warning ⚠️
-Emcee is an exploration of networking and the minecraft protocol, and in its current state is doesnt do authentication, compresseion, and most behavior is hard coded. Furthermore much of the code is not tested thourougly so take caution in trusting its full correctness.
+Emcee is an exploration of networking and the minecraft protocol, and in its current state doesn't do authentication, compression, and most behavior is hard coded. Furthermore much of the code is not tested thoroughly, so take caution in trusting its full correctness.
