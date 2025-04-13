@@ -271,6 +271,10 @@ void pb_write_uuid(PacketBuilder* pb, UUID uuid) {
     pb_write_u64(pb, uuid.inner[1]);
 }
 
+void _pb_write_enumset(PacketBuilder* pb, EnumSet* set) {
+    pb_write_copy(pb, set->bits, BITSET_STORAGE_BYTES(set->variant_count));
+}
+
 void pb_nbt_end(PacketBuilder* pb) {
     pb_write_u8(pb, TAG_End);
 }

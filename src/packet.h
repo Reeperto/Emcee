@@ -64,6 +64,9 @@ void pb_write_string(PacketBuilder* pb, String str);
 void pb_write_json(PacketBuilder* pb, cJSON* json);
 void pb_write_uuid(PacketBuilder* pb, UUID uuid);
 
+#define pb_write_enumset(pb, set) _pb_write_enumset((pb), (EnumSet*)(set))
+void _pb_write_enumset(PacketBuilder* pb, EnumSet* set);
+
 typedef enum {
 	TAG_End,
 	TAG_Byte,

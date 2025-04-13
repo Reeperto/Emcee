@@ -23,3 +23,20 @@ typedef struct {
 } UUID;
 
 UUID uuid_make_random();
+
+typedef struct {
+    int variant_count;
+    uint8_t* bits;
+} EnumSet;
+
+#define BITSET_STORAGE_BYTES(num_bits) (((num_bits) + 7) / 8)
+#define DEFINE_ENUMSET(name, nbits)                        \
+    struct {                                               \
+        EnumSet header;                                    \
+        unsigned char storage[BITSET_STORAGE_BYTES(nbits)];\
+    } name = { { (nbits), (name).storage }, {0} };
+
+#define enumset_set(set, variant) _enumset_set((EnumSet*)(set), (int)(variant))
+#define enumset_unset(set, variant) _enumset_unset((EnumSet*)(set), (int)(variant))
+void _enumset_set(EnumSet* set, int variant);
+void _enumset_unset(EnumSet* set, int variant);

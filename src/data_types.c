@@ -32,3 +32,11 @@ UUID uuid_make_random() {
         .inner[1] = rand(),
     };
 }
+
+void _enumset_set(EnumSet* es, int variant) {
+    es->bits[variant / 8] |= (1 << (variant % 8));
+}
+
+void _enumset_uset(EnumSet* es, int variant) {
+    es->bits[variant / 8] &= ~(1 << (variant % 8));
+}
