@@ -1,4 +1,4 @@
-CFLAGS := -g -ggdb -Wall -fsanitize=address
+CFLAGS := -std=c99 -g -ggdb -Wall -fsanitize=address
 CFLAGS += $(shell pkg-config --cflags libuv)
 LFLAGS := $(shell pkg-config --libs   libuv)
 
@@ -9,8 +9,8 @@ DEPS := $(OBJS:%.o=%.d)
 
 CXXFLAGS := $(CFLAGS) -std=c++20
 
-GTEST_CFLAGS := $(shell pkg-config --cflags gtest_main)
-GTEST_LIBS   := $(shell pkg-config --libs   gtest_main)
+GTEST_CFLAGS = $(shell pkg-config --cflags gtest_main)
+GTEST_LIBS   = $(shell pkg-config --libs   gtest_main)
 
 TEST_OBJS := buffers.o
 TEST_OBJS := $(addprefix tests/, $(TEST_OBJS))
