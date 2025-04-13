@@ -5,6 +5,8 @@ LFLAGS := $(shell pkg-config --libs   libuv)
 OBJS := cJSON.o packet.o packet_handlers.o
 OBJS := $(addprefix src/, $(OBJS))
 
+DEPS := $(OBJS:%.o=%.d)
+
 CXXFLAGS := $(CFLAGS) -std=c++20
 
 GTEST_CFLAGS := $(shell pkg-config --cflags gtest_main)
@@ -20,14 +22,17 @@ emcee_tests: $(OBJS) $(TEST_OBJS)
 	$(CXX) $(CXXFLAGS) $(GTEST_CFLAGS) $(LFLAGS) $(GTEST_LIBS) $^ -o $@
 
 %.o: %.c %.h
-	$(CC) -c $(CFLAGS) $< -o $@
+	$(CC) -MMD -c $(CFLAGS) $< -o $@
 
 %.o: %.cpp
-	$(CXX) -c $(GTEST_CFLAGS) $(CXXFLAGS) -Isrc $< -o $@
+	$(CXX) -MMD -c $(GTEST_CFLAGS) $(CXXFLAGS) -Isrc $< -o $@
+
+-include $(DEPS)
 
 clean:
 	-rm -f emcee emcee_tests
 	-rm -f $(OBJS) $(TEST_OBJS)
+	-rm -f $(DEPS)
 	-rm -rf *.dSYM
 
 all: emcee emcee_tests
