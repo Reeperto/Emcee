@@ -91,12 +91,10 @@ HANDLER(STATUS, ping_request) {
 
     LOG_TRACE("S -> C: pong_response");
     pb_write_id(pb, P_PONG_RESPONSE);
-    pb_write_i64(pb, ping_val); // Payload
+    pb_write_i64(pb, ping_val);
 
     uv_buf_t packet = pb_finalize(pb);
-    send_finalized_packet(handle, packet, true);
-
-    // XXX(eli): Closing the connection here means that the pong response may just die.
+    send_finalized_packet(handle, packet, false);
 
     client->state = HANDSHAKE;
 }

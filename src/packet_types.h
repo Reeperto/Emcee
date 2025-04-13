@@ -5,9 +5,10 @@
 #define P_HELLO                  0x00
 #define P_INTENTION              0x00
 #define P_PING_REQUEST           0x00
-#define P_PONG_RESPONSE          0x00
 #define P_STATUS_REQUEST         0x00
 #define P_STATUS_RESPONSE        0x00
+
+#define P_PONG_RESPONSE          0x01
 
 #define P_LOGIN_FINISHED         0x02
 
