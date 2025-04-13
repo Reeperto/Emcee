@@ -7,22 +7,8 @@
 #include <uv.h>
 
 #include "cJSON.h"
+#include "data_types.h"
 #include "util.h"
-
-#define MAX_VARINT_LEN 5
-#define VARINT_SEGMENT_BITS 0x7F
-#define VARINT_CONTINUE_BIT 0x80
-
-void convert_to_varint(int val, uint8_t varint[MAX_VARINT_LEN], int* byte_count);
-
-typedef struct {
-    const char* data;
-    int len;
-} String;
-
-typedef struct {
-    uint64_t inner[2];
-} UUID;
 
 typedef struct {
     uv_buf_t buffer;

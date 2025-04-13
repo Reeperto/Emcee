@@ -5,6 +5,7 @@
 
 #include "cJSON.h"
 #include "client.h"
+#include "data_types.h"
 
 uint32_t host_float_to_net(float val) {
     uint32_t tmp;
@@ -30,24 +31,6 @@ double net_double_to_host(uint64_t val) {
     double out;
     memcpy(&out, &host, sizeof(double));
     return out;
-}
-
-void convert_to_varint(int val, uint8_t varint[MAX_VARINT_LEN], int* byte_count) {
-    int pos = 0;
-
-    while (true) {
-        if ((val & ~VARINT_SEGMENT_BITS) == 0) {
-            varint[pos] = val;
-            break;
-        }
-
-        varint[pos] = (val & VARINT_SEGMENT_BITS) | VARINT_CONTINUE_BIT;
-
-        pos += 1;
-        val >>= 7;
-    }
-
-    *byte_count = pos + 1;
 }
 
 void pr_delete(PacketReader* pr) {
@@ -177,16 +160,13 @@ int pb_size(const PacketBuilder *pb) {
 uv_buf_t pb_finalize(PacketBuilder* pb) {
     pb_extend(pb, 0); // Ensure packet is in a valid memory state
 
-    uint8_t packet_size[MAX_VARINT_LEN];
-    int byte_count;
+    VarInt packet_size = varint_from_int(pb->pos);
 
-    convert_to_varint(pb->pos, packet_size, &byte_count);
+    uint8_t* packet = malloc(packet_size.byte_count + pb->pos);
+    memcpy(packet, packet_size.bytes, packet_size.byte_count);
+    memcpy(packet + packet_size.byte_count, pb->bytes, pb->pos);
 
-    uint8_t* packet = malloc(byte_count + pb->pos);
-    memcpy(packet, packet_size, byte_count);
-    memcpy(packet + byte_count, pb->bytes, pb->pos);
-
-    return uv_buf_init((char*)packet, pb->pos + byte_count);
+    return uv_buf_init((char*)packet, pb->pos + packet_size.byte_count);
 }
 
 void pb_write_copy(PacketBuilder* pb, const void* src, int count) {
@@ -254,12 +234,10 @@ void pb_write_f64(PacketBuilder* pb, double val) {
 }
 
 void pb_write_varint(PacketBuilder* pb, int val) {
-    uint8_t varint[MAX_VARINT_LEN];
-    int byte_count;
-    convert_to_varint(val, varint, &byte_count);
+    VarInt var_val = varint_from_int(val);
 
-    pb_extend(pb, byte_count);
-    pb_write_copy(pb, varint, byte_count);
+    pb_extend(pb, var_val.byte_count);
+    pb_write_copy(pb, var_val.bytes, var_val.byte_count);
 }
 
 void pb_write_id(PacketBuilder* pb, int id) {
