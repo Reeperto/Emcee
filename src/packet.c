@@ -446,13 +446,17 @@ static void packet_sent_cb(uv_write_t* packet_write, int status) {
     free(packet_write);
 }
 
-void send_finalized_packet(uv_stream_t* handle, uv_buf_t packet, bool should_close) {
+void send_finalized_packet(PacketBuilder* pb, uv_stream_t* handle, bool should_close) {
     packet_sent_data_t* data = talloc(packet_sent_data_t);
-    data->buf = packet;
+
+    uv_buf_t packet_data = pb_finalize(pb);
+    pb_reset(pb);
+
+    data->buf = packet_data;
     data->close_connection = should_close;
 
     uv_write_t* write_req = talloc(uv_write_t);
     write_req->data = data;
 
-    uv_write(write_req, handle, &packet, 1, packet_sent_cb);
+    uv_write(write_req, handle, &packet_data, 1, packet_sent_cb);
 }

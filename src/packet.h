@@ -110,4 +110,4 @@ void pb_nbt_int_array(PacketBuilder* pb, int32_t* list, int size, const char* f_
 void pb_nbt_long_array(PacketBuilder* pb, int64_t* list, int size, const char* f_name);
 void pb_nbt_from_json(PacketBuilder* pb, JOBJ json);
 
-void send_finalized_packet(uv_stream_t* handle, uv_buf_t packet_buffer, bool should_close);
+void send_finalized_packet(PacketBuilder* pb, uv_stream_t* handle, bool should_close);

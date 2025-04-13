@@ -1,7 +1,5 @@
 #include "packet_handlers.h"
 
-#include <stdio.h>
-#include <stdlib.h>
 #include <string.h>
 #include <uv.h>
 
@@ -76,11 +74,10 @@ HANDLER(STATUS, status_request) {
     assert(json_ok);
 
     LOG_TRACE("S -> C: status_response");
-    pb_write_id(pb, P_STATUS_RESPONSE);
+    pb_write_id(pb, P_S_CB_STATUS_RESPONSE);
     pb_write_json(pb, response);
 
-    uv_buf_t packet = pb_finalize(pb);
-    send_finalized_packet(handle, packet, false);
+    send_finalized_packet(pb, handle, false);
 
     cJSON_Delete(response);
 }
@@ -90,11 +87,10 @@ HANDLER(STATUS, ping_request) {
     LOG_TRACE("C -> S: ping_request = { Timestamp = %lld }", ping_val);
 
     LOG_TRACE("S -> C: pong_response");
-    pb_write_id(pb, P_PONG_RESPONSE);
+    pb_write_id(pb, P_S_CB_PONG_RESPONSE);
     pb_write_i64(pb, ping_val);
 
-    uv_buf_t packet = pb_finalize(pb);
-    send_finalized_packet(handle, packet, false);
+    send_finalized_packet(pb, handle, false);
 
     client->state = HANDSHAKE;
 }
@@ -112,13 +108,12 @@ HANDLER(LOGIN, hello) {
               uuid.inner[0], uuid.inner[1]);
 
     LOG_TRACE("S -> C: login_finished");
-    pb_write_id(pb, P_LOGIN_FINISHED);
+    pb_write_id(pb, P_L_CB_LOGIN_FINISHED);
     pb_write_uuid(pb, uuid);
     pb_write_string(pb, username);
     pb_write_varint(pb, 0);
 
-    uv_buf_t packet = pb_finalize(pb);
-    send_finalized_packet(handle, packet, false);
+    send_finalized_packet(pb, handle, false);
 }
 
 HANDLER(LOGIN, login_acknowledged) {
@@ -126,14 +121,13 @@ HANDLER(LOGIN, login_acknowledged) {
     client->state = CONFIG;
 
     LOG_TRACE("S -> C: select_known_packs");
-    pb_write_id(pb, P_SELECT_KNOWN_PACKS);
+    pb_write_id(pb, P_C_CB_SELECT_KNOWN_PACKS);
     pb_write_varint(pb, 1);
     pb_write_string_c(pb, "minecraft");
     pb_write_string_c(pb, "core");
     pb_write_string_c(pb, "1.21.5");
 
-    uv_buf_t packet = pb_finalize(pb);
-    send_finalized_packet(handle, packet, false);
+    send_finalized_packet(pb, handle, false);
 }
 
 // -----------------------------------------------------------------------------
@@ -147,7 +141,7 @@ HANDLER(CONFIG, finish_configuration) {
     uv_timer_start(&client->heartbeat, client_send_heartbeat_cb, 2000, 2000);
 
     LOG_TRACE("S -> C: login");
-    pb_write_id(pb, P_LOGIN);
+    pb_write_id(pb, P_P_CB_LOGIN);
 
     pb_write_u32(pb, 0);                          // Entity ID
     pb_write_bool(pb, false);                     // Hardcore?
@@ -173,31 +167,24 @@ HANDLER(CONFIG, finish_configuration) {
     pb_write_varint(pb, 54);                      // Sea Level
     pb_write_bool(pb, false);                     // Secure Chat?
 
-    uv_buf_t packet = pb_finalize(pb);
-    print_buf_as_hex(stderr, packet);
-    send_finalized_packet(handle, packet, false);
-    pb_reset(pb);
+    send_finalized_packet(pb, handle, false);
 
     LOG_TRACE("S -> C: game_event");
-    pb_write_id(pb, P_GAME_EVENT);
+    pb_write_id(pb, P_P_CB_GAME_EVENT);
     pb_write_u8(pb, 13);
     pb_write_f32(pb, 0);
 
-    packet = pb_finalize(pb);
-    send_finalized_packet(handle, packet, false);
-    pb_reset(pb);
+    send_finalized_packet(pb, handle, false);
 
     LOG_TRACE("S -> C: set_chunk_cache_center");
-    pb_write_id(pb, P_SET_CHUNK_CACHE_CENTER);
+    pb_write_id(pb, P_P_CB_SET_CHUNK_CACHE_CENTER);
     pb_write_varint(pb, 0);
     pb_write_varint(pb, 0);
     
-    packet = pb_finalize(pb);
-    send_finalized_packet(handle, packet, false);
-    pb_reset(pb);
+    send_finalized_packet(pb, handle, false);
 
     LOG_TRACE("S -> C: player_position");
-    pb_write_id(pb, P_PLAYER_POSITION);
+    pb_write_id(pb, P_P_CB_PLAYER_POSITION);
     pb_write_varint(pb, 0);   // Teleport ID
     pb_write_f64(pb, 8);      // Pos X
     pb_write_f64(pb, 128);    // Pos Y
@@ -212,12 +199,10 @@ HANDLER(CONFIG, finish_configuration) {
 
     pb_write_u32(pb, 0);      // Teleport Flags
 
-    packet = pb_finalize(pb);
-    send_finalized_packet(handle, packet, false);
-    pb_reset(pb);
+    send_finalized_packet(pb, handle, false);
 
     LOG_TRACE("S -> C: level_chunk_with_light");
-    pb_write_id(pb, P_LEVEL_CHUNK_WITH_LIGHT);
+    pb_write_id(pb, P_P_CB_LEVEL_CHUNK_WITH_LIGHT);
 
     pb_write_i32(pb, 0); // Chunk X
     pb_write_i32(pb, 0); // Chunk Z
@@ -259,18 +244,14 @@ HANDLER(CONFIG, finish_configuration) {
 
     pb_write_varint(pb, 0); // Block Entity Data Array
 
-    packet = pb_finalize(pb);
-    send_finalized_packet(handle, packet, false);
-    pb_reset(pb);
+    send_finalized_packet(pb, handle, false);
 }
 
 HANDLER(CONFIG, select_known_packs) {
     LOG_TRACE("C -> S: select_known_packs");
 
-    uv_buf_t packet;
-
     for (int i = 0; registries[i].registry_name != NULL; ++i) {
-        pb_write_id(pb, P_REGISTRY_DATA);
+        pb_write_id(pb, P_C_CB_REGISTRY_DATA);
         pb_write_string_c(pb, registries[i].registry_name);
         
         int entry_count = 0;
@@ -289,16 +270,58 @@ HANDLER(CONFIG, select_known_packs) {
             pb_write_bool(pb, false);
         }
 
-        packet = pb_finalize(pb);
-        print_buf_as_hex(stderr, packet);
-        fprintf(stderr, "\n");
-
-        send_finalized_packet(handle, packet, false);
-        pb_reset(pb);
+        send_finalized_packet(pb, handle, false);
     }
 
     LOG_TRACE("S -> C: finish_configuration");
-    pb_write_id(pb, P_FINISH_CONFIGURATION);
-    packet = pb_finalize(pb);
-    send_finalized_packet(handle, packet, false);
+    pb_write_id(pb, P_C_CB_FINISH_CONFIGURATION);
+    send_finalized_packet(pb, handle, false);
+}
+
+// -----------------------------------------------------------------------------
+// PLAY
+// -----------------------------------------------------------------------------
+
+HANDLER(PLAY, chat_command) {
+    String cmd = pr_read_string(pr);
+    LOG_TRACE("Recieved player command -> '%.*s'", cmd.len, cmd.data);
+
+    if (strncmp(cmd.data, "inv", cmd.len) == 0) {
+        pb_write_id(pb, P_P_CB_OPEN_SCREEN);
+        pb_write_varint(pb, 1);
+        pb_write_varint(pb, 0);
+
+        pb_nbt_compound(pb, NULL);
+        pb_nbt_string_c(pb, ":3", "text");
+        pb_nbt_end(pb);
+
+        send_finalized_packet(pb, handle, false);
+    } else if (strncmp(cmd.data, "friend", cmd.len) == 0) {
+        LOG_INFO("Spawning a friend :)");
+
+        pb_write_id(pb, P_P_CB_PLAYER_INFO_UPDATE);
+
+        pb_write_id(pb, P_P_CB_ADD_ENTITY);
+        pb_write_varint(pb, 1);
+        pb_write_uuid(pb, (UUID){
+            .inner[0] = 0x6549647804f647eb,
+            .inner[1] = 0x94e8fb969e3bb0aa,
+        });
+        pb_write_varint(pb, 148);
+
+        pb_write_f64(pb, 8);
+        pb_write_f64(pb, 128);
+        pb_write_f64(pb, 8);
+
+        pb_write_u8(pb, 0);
+        pb_write_u8(pb, 0);
+        pb_write_u8(pb, 0);
+        pb_write_varint(pb, 0);
+
+        pb_write_i16(pb, 0);
+        pb_write_i16(pb, 0);
+        pb_write_i16(pb, 0);
+
+        send_finalized_packet(pb, handle, false);
+    }
 }

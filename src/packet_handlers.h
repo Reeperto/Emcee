@@ -2,43 +2,100 @@
 
 #include "packet.h"
 #include "client.h"
-#include "util.h"
+#include "packet_types.h"
 
 typedef void (*PacketHandler)(uv_stream_t* handle, ClientData* client, PacketReader* pr, PacketBuilder* pb);
-#define HANDLER(STATE, RESOURCE) void packet_##STATE##_##RESOURCE(uv_stream_t* handle, ClientData* client, PacketReader* pr, PacketBuilder* pb)
+#define HANDLER_NAME(STATE, RESOURCE) packet_##STATE##_##RESOURCE
+#define HANDLER(STATE, RESOURCE) void HANDLER_NAME(STATE, RESOURCE)(uv_stream_t* handle, ClientData* client, PacketReader* pr, PacketBuilder* pb)
 
-HANDLER(HANDSHAKE, intention);
+#define HANDSHAKE_PACKETS \
+    X(P_H_SB_INTENTION, intention)
 
-HANDLER(STATUS, status_request);
-HANDLER(STATUS, ping_request);
+#define STATUS_PACKETS \
+    X(P_S_SB_STATUS_REQUEST, status_request) \
+    X(P_S_SB_PING_REQUEST,   ping_request  )
 
-HANDLER(LOGIN, hello);
-HANDLER(LOGIN, login_acknowledged);
+#define LOGIN_PACKETS \
+    X(P_L_SB_HELLO,              hello             ) \
+    X(P_L_SB_LOGIN_ACKNOWLEDGED, login_acknowledged)
 
-HANDLER(CONFIG, select_known_packs);
-HANDLER(CONFIG, finish_configuration);
+#define CONFIG_PACKETS \
+    X(P_C_SB_SELECT_KNOWN_PACKS,   select_known_packs) \
+    X(P_C_SB_FINISH_CONFIGURATION, finish_configuration)
 
-static void null_handler(uv_stream_t* handle, ClientData* client, PacketReader* pr, PacketBuilder* pb) {
-    LOG_TRACE("Ignored packet");
-}
+#define PLAY_PACKETS \
+    X(P_P_SB_CHAT_COMMAND, chat_command) 
 
+#define X(ID, RESOURCE) HANDLER(HANDSHAKE, RESOURCE);
+    HANDSHAKE_PACKETS
+#undef X
 static const PacketHandler HANDSHAKE_HANDLERS[0xFF] = {
-    [0x00] = packet_HANDSHAKE_intention
+#define X(ID, RESOURCE) [ID] = HANDLER_NAME(HANDSHAKE, RESOURCE),
+    HANDSHAKE_PACKETS
+#undef X
 };
 
+#define X(ID, RESOURCE) HANDLER(STATUS, RESOURCE);
+    STATUS_PACKETS
+#undef X
 static const PacketHandler STATUS_HANDLERS[0xFF] = {
-    [0x00] = packet_STATUS_status_request,
-    [0x01] = packet_STATUS_ping_request,
+#define X(ID, RESOURCE) [ID] = HANDLER_NAME(STATUS, RESOURCE),
+    STATUS_PACKETS
+#undef X
 };
 
+#define X(ID, RESOURCE) HANDLER(LOGIN, RESOURCE);
+    LOGIN_PACKETS
+#undef X
 static const PacketHandler LOGIN_HANDLERS[0xFF] = {
-    [0x00] = packet_LOGIN_hello,
-    [0x03] = packet_LOGIN_login_acknowledged,
+#define X(ID, RESOURCE) [ID] = HANDLER_NAME(LOGIN, RESOURCE),
+    LOGIN_PACKETS
+#undef X
 };
 
+#define X(ID, RESOURCE) HANDLER(CONFIG, RESOURCE);
+    CONFIG_PACKETS
+#undef X
 static const PacketHandler CONFIG_HANDLERS[0xFF] = {
-    [0x00] = null_handler,
-    [0x02] = null_handler,
-    [0x03] = packet_CONFIG_finish_configuration,
-    [0x07] = packet_CONFIG_select_known_packs,
+#define X(ID, RESOURCE) [ID] = HANDLER_NAME(CONFIG, RESOURCE),
+    CONFIG_PACKETS
+#undef X
 };
+
+#define X(ID, RESOURCE) HANDLER(PLAY, RESOURCE);
+    PLAY_PACKETS
+#undef X
+static const PacketHandler PLAY_HANDLERS[0xFF] = {
+#define X(ID, RESOURCE) [ID] = HANDLER_NAME(PLAY, RESOURCE),
+    PLAY_PACKETS
+#undef X
+};
+
+static inline void process_packet(int packet_id, uv_stream_t* handle, ClientData* client, PacketReader* pr, PacketBuilder* pb) {
+    PacketHandler handler = NULL;
+
+    switch (client->state) {
+        case HANDSHAKE:
+            handler = HANDSHAKE_HANDLERS[packet_id];
+            break;
+        case STATUS:
+            handler = STATUS_HANDLERS[packet_id];
+            break;
+        case LOGIN:
+            handler = LOGIN_HANDLERS[packet_id];
+            break;
+        case TRANSFER:
+            assert(false);
+            break;
+        case CONFIG:
+            handler = CONFIG_HANDLERS[packet_id];
+            break;
+        case PLAY:
+            handler = PLAY_HANDLERS[packet_id];
+            break;
+    }
+
+    if (handler != NULL) {
+        handler(handle, client, pr, pb);
+    }
+}

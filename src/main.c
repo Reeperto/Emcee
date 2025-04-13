@@ -57,7 +57,7 @@ void connection_read_cb(uv_stream_t* handle,
     int current_idx = 0;
 
     if (nread > 0) {
-        LOG_DEBUG("Recieved %ld bytes", nread);
+        // LOG_DEBUG("Recieved %ld bytes", nread);
 
         while (true) {
             if (current_idx >= nread) {
@@ -86,27 +86,9 @@ void connection_read_cb(uv_stream_t* handle,
                         
                         int packet_id = pr_read_varint(&pr);
 
-                        LOG_DEBUG("Received packet { state = %d, id = 0x%02X, len = %d }", client->state, packet_id, client->ri.packet_size);
+                        // LOG_DEBUG("Received packet { state = %d, id = 0x%02X, len = %d }", client->state, packet_id, client->ri.packet_size);
 
-                        switch (client->state) {
-                        case HANDSHAKE:
-                            HANDSHAKE_HANDLERS[packet_id](handle, client, &pr, pb);
-                            break;
-                        case STATUS:
-                            STATUS_HANDLERS[packet_id](handle, client, &pr, pb);
-                            break;
-                        case LOGIN:
-                            LOGIN_HANDLERS[packet_id](handle, client, &pr, pb);
-                            break;
-                        case TRANSFER:
-                            abort();
-                            break;
-                        case CONFIG:
-                            CONFIG_HANDLERS[packet_id](handle, client, &pr, pb);
-                            break;
-                        case PLAY:
-                          break;
-                        }
+                        process_packet(packet_id, handle, client, &pr, pb);
 
                         current_idx += client->ri.packet_size;
 
