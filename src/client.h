@@ -1,6 +1,5 @@
 #pragma once
 
-#include <stdlib.h>
 #include <uv.h>
 
 #include "packet.h"
@@ -18,15 +17,21 @@ typedef enum {
 
 typedef struct {
     uv_buf_t read_buffer;
+    uv_stream_t* client_stream;
+    uv_timer_t heartbeat;
+
+    struct { 
+        int read_left;
+        bool done_reading_size;
+        int packet_size;
+        int varint_pos;
+        uint8_t* packet_data;
+        int packet_data_write_pos;
+    } ri;
+
     ClientState state;
     PacketBuilder pb;
-} Client;
+} ClientData;
 
-static void client_close_connection_cb(uv_shutdown_t* req, int status) {
-    Client* client = (Client*)(req->handle->data);
-
-    pb_delete(&client->pb);
-    free(client->read_buffer.base);
-
-    free(req);
-}
+void client_close_connection_cb(uv_handle_t* handle);
+void client_send_heartbeat_cb(uv_timer_t* handle);

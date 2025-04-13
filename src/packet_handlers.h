@@ -4,8 +4,8 @@
 #include "client.h"
 #include "util.h"
 
-typedef void (*PacketHandler)(uv_stream_t* handle, Client* client, PacketReader* pr, PacketBuilder* pb);
-#define HANDLER(STATE, RESOURCE) void packet_##STATE##_##RESOURCE(uv_stream_t* handle, Client* client, PacketReader* pr, PacketBuilder* pb)
+typedef void (*PacketHandler)(uv_stream_t* handle, ClientData* client, PacketReader* pr, PacketBuilder* pb);
+#define HANDLER(STATE, RESOURCE) void packet_##STATE##_##RESOURCE(uv_stream_t* handle, ClientData* client, PacketReader* pr, PacketBuilder* pb)
 
 HANDLER(HANDSHAKE, intention);
 
@@ -18,7 +18,7 @@ HANDLER(LOGIN, login_acknowledged);
 HANDLER(CONFIG, select_known_packs);
 HANDLER(CONFIG, finish_configuration);
 
-static void null_handler(uv_stream_t* handle, Client* client, PacketReader* pr, PacketBuilder* pb) {
+static void null_handler(uv_stream_t* handle, ClientData* client, PacketReader* pr, PacketBuilder* pb) {
     LOG_TRACE("Ignored packet");
 }
 

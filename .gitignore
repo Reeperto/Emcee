@@ -1,4 +1,6 @@
 *.dSYM
+*.d
+*.o
 .DS_Store
 emcee
 compile_commands.json

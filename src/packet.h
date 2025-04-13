@@ -10,6 +10,9 @@
 #include "util.h"
 
 #define MAX_VARINT_LEN 5
+#define VARINT_SEGMENT_BITS 0x7F
+#define VARINT_CONTINUE_BIT 0x80
+
 void convert_to_varint(int val, uint8_t varint[MAX_VARINT_LEN], int* byte_count);
 
 typedef struct {
@@ -54,12 +57,13 @@ void pb_delete(PacketBuilder* pb);
 uv_buf_t pb_finalize(PacketBuilder* pb);
 int pb_size(const PacketBuilder* pb);
 
-void pb_write_copy(PacketBuilder* pb, const void* dest, int count);
+void pb_write_copy(PacketBuilder* pb, const void* src, int count);
 
 void pb_write_bool(PacketBuilder* pb, bool val);
 void pb_write_u8(PacketBuilder* pb, uint8_t val);
 void pb_write_i8(PacketBuilder* pb, int8_t val);
 void pb_write_u16(PacketBuilder* pb, uint16_t val);
+void pb_write_i16(PacketBuilder* pb, int16_t val);
 void pb_write_u32(PacketBuilder* pb, uint32_t val);
 void pb_write_i32(PacketBuilder* pb, int32_t val);
 void pb_write_u64(PacketBuilder* pb, uint64_t val);
@@ -105,3 +109,5 @@ void pb_nbt_compound(PacketBuilder* pb, const char* f_name);
 void pb_nbt_int_array(PacketBuilder* pb, int32_t* list, int size, const char* f_name);
 void pb_nbt_long_array(PacketBuilder* pb, int64_t* list, int size, const char* f_name);
 void pb_nbt_from_json(PacketBuilder* pb, JOBJ json);
+
+void send_finalized_packet(uv_stream_t* handle, uv_buf_t packet_buffer, bool should_close);

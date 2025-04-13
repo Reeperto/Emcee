@@ -1,18 +1,26 @@
 #include "client.h"
 
-void client_close_connection_cb(uv_shutdown_t* req, int status) {
-    Client* client = (Client*)(req->handle->data);
+#include <stdlib.h>
+
+#include "packet_types.h"
+#include "util.h"
+
+void client_close_connection_cb(uv_handle_t* handle) {
+    LOG_INFO("Closing client");
+    ClientData* client = (ClientData*)(handle->data);
 
     uv_timer_stop(&client->heartbeat);
 
     pb_delete(&client->pb);
     free(client->read_buffer.base);
+    free(client->ri.packet_data);
 
-    free(req);
+    free(client);
+    free(handle);
 }
 
 void client_send_heartbeat_cb(uv_timer_t* handle) {
-    Client* client = handle->data;
+    ClientData* client = handle->data;
     PacketBuilder* pb = &client->pb;
 
     LOG_TRACE("S -> C: keep_alive");

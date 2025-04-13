@@ -1,39 +1,15 @@
 #include "packet_handlers.h"
 
+#include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include <uv.h>
 
 #include "cJSON.h"
 #include "packet.h"
 #include "packet_types.h"
+#include "registry_data.h"
 #include "util.h"
-
-typedef struct {
-    uv_buf_t buf;
-    bool close_connection;
-} packet_sent_data_t;
-
-static void packet_sent_cb(uv_write_t* packet_write, int status) {
-    packet_sent_data_t* data = packet_write->data;
-
-    if (data->close_connection) {
-        uv_shutdown(talloc(uv_shutdown_t), packet_write->handle, client_close_connection_cb);
-    }
-
-    free(data->buf.base);
-    free(data);
-}
-
-void send_finalized_packet(uv_stream_t* handle, uv_buf_t packet, bool should_close) {
-    packet_sent_data_t* data = talloc(packet_sent_data_t);
-    data->buf = packet;
-    data->close_connection = should_close;
-
-    uv_write_t* write_req = talloc(uv_write_t);
-    write_req->data = data;
-
-    uv_write(write_req, handle, &packet, 1, packet_sent_cb);
-}
 
 // -----------------------------------------------------------------------------
 // HANDSHAKE
@@ -99,12 +75,12 @@ HANDLER(STATUS, status_request) {
 
     assert(json_ok);
 
+    LOG_TRACE("S -> C: status_response");
     pb_write_id(pb, P_STATUS_RESPONSE);
     pb_write_json(pb, response);
 
     uv_buf_t packet = pb_finalize(pb);
     send_finalized_packet(handle, packet, false);
-    LOG_TRACE("S -> C: status_response");
 
     cJSON_Delete(response);
 }
@@ -113,12 +89,12 @@ HANDLER(STATUS, ping_request) {
     int64_t ping_val = pr_read_i64(pr);
     LOG_TRACE("C -> S: ping_request = { Timestamp = %lld }", ping_val);
 
+    LOG_TRACE("S -> C: pong_response");
     pb_write_id(pb, P_PONG_RESPONSE);
     pb_write_i64(pb, ping_val); // Payload
 
     uv_buf_t packet = pb_finalize(pb);
     send_finalized_packet(handle, packet, true);
-    LOG_TRACE("S -> C: pong_response");
 
     // XXX(eli): Closing the connection here means that the pong response may just die.
 
@@ -137,6 +113,7 @@ HANDLER(LOGIN, hello) {
               username.len, username.data, 
               uuid.inner[0], uuid.inner[1]);
 
+    LOG_TRACE("S -> C: login_finished");
     pb_write_id(pb, P_LOGIN_FINISHED);
     pb_write_uuid(pb, uuid);
     pb_write_string(pb, username);
@@ -144,13 +121,13 @@ HANDLER(LOGIN, hello) {
 
     uv_buf_t packet = pb_finalize(pb);
     send_finalized_packet(handle, packet, false);
-    LOG_TRACE("S -> C: login_finished");
 }
 
 HANDLER(LOGIN, login_acknowledged) {
     LOG_TRACE("C -> S: login_acknowledged");
     client->state = CONFIG;
 
+    LOG_TRACE("S -> C: select_known_packs");
     pb_write_id(pb, P_SELECT_KNOWN_PACKS);
     pb_write_varint(pb, 1);
     pb_write_string_c(pb, "minecraft");
@@ -159,7 +136,6 @@ HANDLER(LOGIN, login_acknowledged) {
 
     uv_buf_t packet = pb_finalize(pb);
     send_finalized_packet(handle, packet, false);
-    LOG_TRACE("S -> C: select_known_packs");
 }
 
 // -----------------------------------------------------------------------------
@@ -170,6 +146,9 @@ HANDLER(CONFIG, finish_configuration) {
     LOG_TRACE("C -> S: finish_configuration");
     client->state = PLAY;
 
+    uv_timer_start(&client->heartbeat, client_send_heartbeat_cb, 2000, 2000);
+
+    LOG_TRACE("S -> C: login");
     pb_write_id(pb, P_LOGIN);
 
     pb_write_u32(pb, 0);                          // Entity ID
@@ -193,14 +172,98 @@ HANDLER(CONFIG, finish_configuration) {
     pb_write_bool(pb, false);                     // World Superflat?
     pb_write_bool(pb, false);                     // Death Location?
     pb_write_varint(pb, 0);                       // Portal Cooldown
-    pb_write_varint(pb, 0);                       // Sea Level
+    pb_write_varint(pb, 54);                      // Sea Level
     pb_write_bool(pb, false);                     // Secure Chat?
-
 
     uv_buf_t packet = pb_finalize(pb);
     print_buf_as_hex(stderr, packet);
     send_finalized_packet(handle, packet, false);
-    LOG_TRACE("S -> C: login");
+    pb_reset(pb);
+
+    LOG_TRACE("S -> C: game_event");
+    pb_write_id(pb, P_GAME_EVENT);
+    pb_write_u8(pb, 13);
+    pb_write_f32(pb, 0);
+
+    packet = pb_finalize(pb);
+    send_finalized_packet(handle, packet, false);
+    pb_reset(pb);
+
+    LOG_TRACE("S -> C: set_chunk_cache_center");
+    pb_write_id(pb, P_SET_CHUNK_CACHE_CENTER);
+    pb_write_varint(pb, 0);
+    pb_write_varint(pb, 0);
+    
+    packet = pb_finalize(pb);
+    send_finalized_packet(handle, packet, false);
+    pb_reset(pb);
+
+    LOG_TRACE("S -> C: player_position");
+    pb_write_id(pb, P_PLAYER_POSITION);
+    pb_write_varint(pb, 0);   // Teleport ID
+    pb_write_f64(pb, 8);      // Pos X
+    pb_write_f64(pb, 128);    // Pos Y
+    pb_write_f64(pb, 8);      // Pos Z
+
+    pb_write_f64(pb, 0);      // Vel X
+    pb_write_f64(pb, 0);      // Vel Y
+    pb_write_f64(pb, 0);      // Vel Z
+
+    pb_write_f32(pb, 0);      // Yaw
+    pb_write_f32(pb, 0);      // Pitch
+
+    pb_write_u32(pb, 0);      // Teleport Flags
+
+    packet = pb_finalize(pb);
+    send_finalized_packet(handle, packet, false);
+    pb_reset(pb);
+
+    LOG_TRACE("S -> C: level_chunk_with_light");
+    pb_write_id(pb, P_LEVEL_CHUNK_WITH_LIGHT);
+
+    pb_write_i32(pb, 0); // Chunk X
+    pb_write_i32(pb, 0); // Chunk Z
+
+    pb_write_varint(pb, 0); // Heightmap Count
+
+    PacketBuilder pb_chunk = {0};
+    
+    // --- Full chunk
+    for (int i = 1; i <= 24; ++i) {
+        if (i <= 12) {
+            pb_write_i16(&pb_chunk, 4096);
+            pb_write_u8(&pb_chunk, 0);
+            pb_write_varint(&pb_chunk, i == 12 ? 8 : 1);
+        } else {
+            pb_write_i16(&pb_chunk, 0);
+            pb_write_u8(&pb_chunk, 0);
+            pb_write_varint(&pb_chunk, 0);
+        }
+
+        pb_write_u8(&pb_chunk, 0);
+        pb_write_varint(&pb_chunk, 0);
+    }
+
+    assert(pb_chunk.pos == (2+2+2) * 24);
+
+    pb_write_varint(pb, pb_chunk.pos); // Data Size
+    pb_write_copy(pb, pb_chunk.bytes, pb_chunk.pos);
+
+    pb_delete(&pb_chunk);
+
+    pb_write_varint(pb, 0); // Skylight Mask
+    pb_write_varint(pb, 0); // Block Light Mask
+    pb_write_varint(pb, 0); // Empty Sky Light Mask
+    pb_write_varint(pb, 0); // Empty Block Light Mask
+
+    pb_write_varint(pb, 0); // Sky Light Arrays 
+    pb_write_varint(pb, 0); // Block Light Arrays 
+
+    pb_write_varint(pb, 0); // Block Entity Data Array
+
+    packet = pb_finalize(pb);
+    send_finalized_packet(handle, packet, false);
+    pb_reset(pb);
 }
 
 HANDLER(CONFIG, select_known_packs) {
@@ -208,271 +271,36 @@ HANDLER(CONFIG, select_known_packs) {
 
     uv_buf_t packet;
 
-    {
+    for (int i = 0; registries[i].registry_name != NULL; ++i) {
         pb_write_id(pb, P_REGISTRY_DATA);
-        pb_write_string_c(pb, "worldgen/biome");
-        pb_write_varint(pb, 1);
-        pb_write_string_c(pb, "plains");
-        pb_write_bool(pb, true);
+        pb_write_string_c(pb, registries[i].registry_name);
+        
+        int entry_count = 0;
+        while (registries[i].entries[entry_count]) {
+            ++entry_count;
+        }
 
-        pb_nbt_from_json(pb, cJSON_Parse(
-        "{"
-        "\"downfall\": 0.4000000059604645,"
-        "\"effects\": {"
-        "    \"fog_color\": 12638463,"
-        "    \"mood_sound\": {"
-        "        \"block_search_extent\": 8,"
-        "        \"offset\": 2.0,"
-        "        \"sound\": \"minecraft:ambient.cave\","
-        "        \"tick_delay\": 6000"
-        "    },"
-        "    \"sky_color\": 7907327,"
-        "    \"water_color\": 4159204,"
-        "    \"water_fog_color\": 329011"
-        "},"
-        "\"has_precipitation\": true,"
-        "\"temperature\": 0.800000011920929"
-        "}"
-        ));
+        LOG_TRACE("Sending registry %s with %d entries", 
+                  registries[i].registry_name,
+                  entry_count);
+
+        pb_write_varint(pb, entry_count);
+        
+        for (int j = 0; registries[i].entries[j] != NULL; ++j) {
+            pb_write_string_c(pb, registries[i].entries[j]);
+            pb_write_bool(pb, false);
+        }
 
         packet = pb_finalize(pb);
+        print_buf_as_hex(stderr, packet);
+        fprintf(stderr, "\n");
+
         send_finalized_packet(handle, packet, false);
         pb_reset(pb);
     }
 
-    {
-        pb_write_id(pb, P_REGISTRY_DATA);
-        pb_write_string_c(pb, "damage_type");
-        pb_write_varint(pb, 0);
-
-        packet = pb_finalize(pb);
-        send_finalized_packet(handle, packet, false);
-        pb_reset(pb);
-    }
-
-    {
-        pb_write_id(pb, P_REGISTRY_DATA);
-        pb_write_string_c(pb, "chat_type");
-        pb_write_varint(pb, 0);
-
-        packet = pb_finalize(pb);
-        send_finalized_packet(handle, packet, false);
-        pb_reset(pb);
-    }
-
-    {
-        pb_write_id(pb, P_REGISTRY_DATA);
-        pb_write_string_c(pb, "dimension_type");
-        pb_write_varint(pb, 1);
-
-        pb_write_string_c(pb, "overworld");
-        pb_write_bool(pb, true);
-        pb_nbt_from_json(pb, cJSON_Parse(
-        "{"
-        "    \"ambient_light\": 0.0,"
-        "    \"bed_works\": true,"
-        "    \"coordinate_scale\": 1.0,"
-        "    \"effects\": \"minecraft:overworld\","
-        "    \"has_ceiling\": false,"
-        "    \"has_raids\": true,"
-        "    \"has_skylight\": true,"
-        "    \"height\": 384,"
-        "    \"infiniburn\": \"#minecraft:infiniburn_overworld\","
-        "    \"logical_height\": 384,"
-        "    \"min_y\": -64,"
-        "    \"monster_spawn_block_light_limit\": 0,"
-        "    \"monster_spawn_light_level\": {"
-        "        \"type\": \"minecraft:uniform\","
-        "        \"max_inclusive\": 7,"
-        "        \"min_inclusive\": 0"
-        "    },"
-        "    \"natural\": true,"
-        "    \"piglin_safe\": false,"
-        "    \"respawn_anchor_works\": false,"
-        "    \"ultrawarm\": false"
-        "}"
-        ));
-
-        packet = pb_finalize(pb);
-        send_finalized_packet(handle, packet, false);
-        pb_reset(pb);
-    }
-
-    {
-        pb_write_id(pb, P_REGISTRY_DATA);
-        pb_write_string_c(pb, "cat_variant");
-        pb_write_varint(pb, 1);
-        pb_write_string_c(pb, "white");
-        pb_write_bool(pb, true);
-
-        pb_nbt_from_json(pb, cJSON_Parse(
-            "{"
-                "\"asset_id\": \"cat/white\","
-                "\"spawn_conditions\": { \"priority\": 0 }"
-            "}"
-        ));
-
-        packet = pb_finalize(pb);
-        send_finalized_packet(handle, packet, false);
-        pb_reset(pb);
-    }
-
-    {
-        pb_write_id(pb, P_REGISTRY_DATA);
-        pb_write_string_c(pb, "chicken_variant");
-        pb_write_varint(pb, 1);
-        pb_write_string_c(pb, "temperate");
-        pb_write_bool(pb, true);
-
-        pb_nbt_from_json(pb, cJSON_Parse(
-            "{" 
-                "\"asset_id\": \"chicken/temperate_chicken\","
-                "\"spawn_conditions\": { \"priority\": 0 }"
-            "}"
-        ));
-
-        packet = pb_finalize(pb);
-        send_finalized_packet(handle, packet, false);
-        pb_reset(pb);
-    }
-
-    {
-        pb_write_id(pb, P_REGISTRY_DATA);
-        pb_write_string_c(pb, "cow_variant");
-        pb_write_varint(pb, 1);
-        pb_write_string_c(pb, "temperate");
-        pb_write_bool(pb, true);
-
-        pb_nbt_from_json(pb, cJSON_Parse(
-            "{" 
-                "\"asset_id\": \"cow/temperate_cow\","
-                "\"spawn_conditions\": { \"priority\": 0 }"
-            "}"
-        ));
-
-        packet = pb_finalize(pb);
-        send_finalized_packet(handle, packet, false);
-        pb_reset(pb);
-    }
-
-    {
-        pb_write_id(pb, P_REGISTRY_DATA);
-        pb_write_string_c(pb, "frog_variant");
-        pb_write_varint(pb, 1);
-        pb_write_string_c(pb, "temperate");
-        pb_write_bool(pb, true);
-
-        pb_nbt_from_json(pb, cJSON_Parse(
-            "{" 
-                "\"asset_id\": \"frog/temperate_frog\","
-                "\"spawn_conditions\": { \"priority\": 0 }"
-            "}"
-        ));
-
-        packet = pb_finalize(pb);
-        send_finalized_packet(handle, packet, false);
-        pb_reset(pb);
-    }
-
-    {
-        pb_write_id(pb, P_REGISTRY_DATA);
-        pb_write_string_c(pb, "pig_variant");
-        pb_write_varint(pb, 1);
-        pb_write_string_c(pb, "temperate");
-        pb_write_bool(pb, true);
-
-        pb_nbt_from_json(pb, cJSON_Parse(
-            "{" 
-                "\"asset_id\": \"pig/temperate_pig\","
-                "\"spawn_conditions\": { \"priority\": 0 }"
-            "}"
-        ));
-
-        packet = pb_finalize(pb);
-        send_finalized_packet(handle, packet, false);
-        pb_reset(pb);
-    }
-
-    {
-        pb_write_id(pb, P_REGISTRY_DATA);
-        pb_write_string_c(pb, "painting_variant");
-        pb_write_varint(pb, 1);
-        pb_write_string_c(pb, "owlemons");
-        pb_write_bool(pb, true);
-
-        pb_nbt_from_json(pb, cJSON_Parse(
-            "{" 
-                "\"asset_id\": \"owlemons\","
-                "\"width\": 3,"
-                "\"height\": 3,"
-                "\"title\": \"OWL!\","
-                "\"author\": \"OWL!\""
-            "}"
-        ));
-
-        packet = pb_finalize(pb);
-        send_finalized_packet(handle, packet, false);
-        pb_reset(pb);
-    }
-
-    {
-        pb_write_id(pb, P_REGISTRY_DATA);
-        pb_write_string_c(pb, "wolf_variant");
-        pb_write_varint(pb, 1);
-        pb_write_string_c(pb, "pale");
-        pb_write_bool(pb, true);
-
-        // 1.21.5
-        pb_nbt_from_json(pb, cJSON_Parse(
-            "{" 
-                "\"assets\": {"
-                    "\"angry\": \"wolf/wolf_angry\","
-                    "\"tame\": \"wolf/wolf_tame\","
-                    "\"wild\": \"wolf/wolf\""
-                "},"
-                "\"spawn_conditions\": { \"priority\": 0 }"
-            "}"
-        ));
-
-        packet = pb_finalize(pb);
-        send_finalized_packet(handle, packet, false);
-        pb_reset(pb);
-    }
-
-    {
-        pb_write_id(pb, P_REGISTRY_DATA);
-        pb_write_string_c(pb, "wolf_sound_variant");
-        pb_write_varint(pb, 1);
-        pb_write_string_c(pb, "classic");
-        pb_write_bool(pb, true);
-
-        pb_nbt_from_json(pb, cJSON_Parse(
-            "{" 
-                "\"ambient_sound\": \"minecraft:entity.wolf.ambient\","
-                "\"death_sound\": \"minecraft:entity.wolf.death\","
-                "\"growl_sound\": \"minecraft:entity.wolf.growl\","
-                "\"hurt_sound\": \"minecraft:entity.wolf.hurt\","
-                "\"pant_sound\": \"minecraft:entity.wolf.pant\","
-                "\"whine_sound\": \"minecraft:entity.wolf.whine\""
-            "}"
-        ));
-
-        packet = pb_finalize(pb);
-        send_finalized_packet(handle, packet, false);
-        pb_reset(pb);
-    }
-
-    {
-        pb_write_id(pb, P_UPDATE_TAGS);
-        pb_write_varint(pb, 0);
-
-        packet = pb_finalize(pb);
-        send_finalized_packet(handle, packet, false);
-        pb_reset(pb);
-    }
-
+    LOG_TRACE("S -> C: finish_configuration");
     pb_write_id(pb, P_FINISH_CONFIGURATION);
     packet = pb_finalize(pb);
     send_finalized_packet(handle, packet, false);
-    LOG_TRACE("S -> C: finish_configuration");
 }

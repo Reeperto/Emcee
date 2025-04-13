@@ -71,7 +71,21 @@ BLOCK \
     }                                                   \
 } while(0) 
 
-static void print_buf_as_hex(FILE* file, uv_buf_t buf) {
+#define max(a,b)             \
+({                           \
+    __typeof__ (a) _a = (a); \
+    __typeof__ (b) _b = (b); \
+    _a > _b ? _a : _b;       \
+})
+
+#define min(a,b)             \
+({                           \
+    __typeof__ (a) _a = (a); \
+    __typeof__ (b) _b = (b); \
+    _a < _b ? _a : _b;       \
+})
+
+static inline void print_buf_as_hex(FILE* file, uv_buf_t buf) {
     for (int i = 0; i < buf.len; ++i) {
         fprintf(file, "%02X", (unsigned char)buf.base[i]);
 

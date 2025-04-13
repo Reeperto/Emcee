@@ -4,9 +4,7 @@
 #include <math.h>
 
 #include "cJSON.h"
-
-#define SEGMENT_BITS 0x7F
-#define CONTINUE_BIT 0x80
+#include "client.h"
 
 uint32_t host_float_to_net(float val) {
     uint32_t tmp;
@@ -38,12 +36,12 @@ void convert_to_varint(int val, uint8_t varint[MAX_VARINT_LEN], int* byte_count)
     int pos = 0;
 
     while (true) {
-        if ((val & ~SEGMENT_BITS) == 0) {
+        if ((val & ~VARINT_SEGMENT_BITS) == 0) {
             varint[pos] = val;
             break;
         }
 
-        varint[pos] = (val & SEGMENT_BITS) | CONTINUE_BIT;
+        varint[pos] = (val & VARINT_SEGMENT_BITS) | VARINT_CONTINUE_BIT;
 
         pos += 1;
         val >>= 7;
@@ -64,28 +62,37 @@ PacketReader pr_from_uv(uv_buf_t buf) {
     };
 }
 
+static void pr_check_length(PacketReader* pr, int len) {
+    assert(pr->pos + len <= pr->buffer.len);
+}
+
 void pr_read_copy(PacketReader* pr, void* dest, int count) {
+    pr_check_length(pr, count);
     memcpy(dest, &pr->buffer.base[pr->pos], count);
     pr->pos += count;
 }
 
 uint8_t pr_read_u8(PacketReader* pr) {
+    pr_check_length(pr, sizeof(uint8_t));
     return pr->buffer.base[pr->pos++];
 }
 
 uint16_t pr_read_u16(PacketReader* pr) {
+    pr_check_length(pr, sizeof(uint16_t));
     uint16_t val;
     pr_read_copy(pr, &val, 2);
     return ntohs(val);
 }
 
 int64_t pr_read_i64(PacketReader* pr) {
+    pr_check_length(pr, sizeof(int64_t));
     int64_t val;
     pr_read_copy(pr, &val, sizeof(int64_t));
     return (int64_t)ntohll(val);
 }
 
 uint64_t pr_read_u64(PacketReader* pr) {
+    pr_check_length(pr, sizeof(uint64_t));
     uint64_t val;
     pr_read_copy(pr, &val, sizeof(uint64_t));
     return ntohll(val);
@@ -98,9 +105,9 @@ int32_t pr_read_varint(PacketReader* pr) {
 
     while (true) {
         byte = pr_read_u8(pr);
-        value |= (byte & SEGMENT_BITS) << position;
+        value |= (byte & VARINT_SEGMENT_BITS) << position;
 
-        if ((byte & CONTINUE_BIT) == 0) {
+        if ((byte & VARINT_CONTINUE_BIT) == 0) {
             break;
         }
 
@@ -114,6 +121,7 @@ int32_t pr_read_varint(PacketReader* pr) {
 
 String pr_read_string(PacketReader* pr) {
     int len = pr_read_varint(pr);
+    pr_check_length(pr, len);
 
     String str = (String){
         .data = &pr->buffer.base[pr->pos],
@@ -208,6 +216,11 @@ void pb_write_i8(PacketBuilder* pb, int8_t val) {
 void pb_write_u16(PacketBuilder* pb, uint16_t val) {
     uint16_t big_end = htons(val);
     pb_write_copy(pb, &big_end, sizeof(uint16_t));
+}
+
+void pb_write_i16(PacketBuilder* pb, int16_t val) {
+    int16_t big_end = htons(val);
+    pb_write_copy(pb, &big_end, sizeof(int16_t));
 }
 
 void pb_write_u32(PacketBuilder* pb, uint32_t val) {
@@ -411,6 +424,35 @@ void pb_json_to_nbt_recur(PacketBuilder* pb, JOBJ json) {
 
 void pb_nbt_from_json(PacketBuilder* pb, JOBJ json) {
     pb_nbt_compound(pb, NULL);
+    LOG_TRACE("JSON_PAYLOAD = %s", cJSON_Print(json));
     pb_json_to_nbt_recur(pb, json);
     pb_nbt_end(pb);
+}
+
+typedef struct {
+    uv_buf_t buf;
+    bool close_connection;
+} packet_sent_data_t;
+
+static void packet_sent_cb(uv_write_t* packet_write, int status) {
+    packet_sent_data_t* data = packet_write->data;
+
+    if (data->close_connection) {
+        uv_close((uv_handle_t*)packet_write->handle, client_close_connection_cb);
+    }
+
+    free(data->buf.base);
+    free(data);
+    free(packet_write);
+}
+
+void send_finalized_packet(uv_stream_t* handle, uv_buf_t packet, bool should_close) {
+    packet_sent_data_t* data = talloc(packet_sent_data_t);
+    data->buf = packet;
+    data->close_connection = should_close;
+
+    uv_write_t* write_req = talloc(uv_write_t);
+    write_req->data = data;
+
+    uv_write(write_req, handle, &packet, 1, packet_sent_cb);
 }

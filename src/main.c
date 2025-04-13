@@ -27,7 +27,7 @@ void on_stdin_ready(uv_poll_t* handle, int status, int events) {
 #define DEFAULT_BUFFER_SIZE 32768
 
 static void default_alloc_cb(uv_handle_t* handle, size_t suggested_size, uv_buf_t* buf) {
-    Client* client = (Client*)handle->data;
+    ClientData* client = (ClientData*)handle->data;
 
     if (client->read_buffer.len == 0) {
         client->read_buffer = (uv_buf_t){
@@ -39,46 +39,103 @@ static void default_alloc_cb(uv_handle_t* handle, size_t suggested_size, uv_buf_
     *buf = client->read_buffer;
 }
 
+bool build_varint(uint8_t byte, int* curr_pos, int* val) {
+    *val |= (byte & VARINT_SEGMENT_BITS) << *curr_pos;
+
+    if ((byte & VARINT_CONTINUE_BIT) == 0) return true;
+
+    *curr_pos += 7;
+
+    return false;
+}
+
 void connection_read_cb(uv_stream_t* handle,
                         ssize_t nread,
                         const uv_buf_t* buf) {
-    // XXX(eli): BAD BAD BAD BAD... assuming the buffer contains the entire
-    // packets and that there is exactly 1 packet in it
+    ClientData* client = handle->data;
 
-    Client* client = handle->data;
+    int current_idx = 0;
 
     if (nread > 0) {
-        PacketReader pr = pr_from_uv(*buf);
-        PacketBuilder *pb = &client->pb;
-        pb_reset(pb);
+        LOG_DEBUG("Recieved %ld bytes", nread);
 
-        int packet_len = pr_read_varint(&pr);
-        int packet_id = pr_read_varint(&pr);
+        while (true) {
+            if (current_idx >= nread) {
+                break;
+            }
 
-        LOG_DEBUG("Received packet { state = %d, id = 0x%02X, len = %d }", client->state, packet_id, packet_len);
+            if (client->ri.read_left == 0) {
+                // The current buffer represents the start of a new sequence of packets
+                while (!client->ri.done_reading_size && current_idx < nread) {
+                    client->ri.done_reading_size |= build_varint(buf->base[current_idx], &client->ri.varint_pos, &client->ri.packet_size);
+                    ++current_idx;
+                }
 
-        switch (client->state) {
-        case HANDSHAKE:
-            HANDSHAKE_HANDLERS[packet_id](handle, client, &pr, pb);
-            break;
-        case STATUS:
-            STATUS_HANDLERS[packet_id](handle, client, &pr, pb);
-            break;
-        case LOGIN:
-            LOGIN_HANDLERS[packet_id](handle, client, &pr, pb);
-            break;
-        case TRANSFER:
-            abort();
-            break;
-        case CONFIG:
-            CONFIG_HANDLERS[packet_id](handle, client, &pr, pb);
-            break;
-        case PLAY:
-          break;
+                if (client->ri.done_reading_size) {
+                    client->ri.done_reading_size = false;
+
+                    client->ri.packet_data = realloc(client->ri.packet_data, client->ri.packet_size);
+
+                    if (current_idx + client->ri.packet_size <= nread) {
+                        // Entire packet is in this buffer
+                        memcpy(client->ri.packet_data, buf->base + current_idx, client->ri.packet_size);
+
+                        PacketReader pr = pr_from_uv((uv_buf_t){ .base = (char*)client->ri.packet_data, .len = client->ri.packet_size });
+                        PacketBuilder* pb = &client->pb;
+                        pb_reset(pb);
+                        
+                        int packet_id = pr_read_varint(&pr);
+
+                        LOG_DEBUG("Received packet { state = %d, id = 0x%02X, len = %d }", client->state, packet_id, client->ri.packet_size);
+
+                        switch (client->state) {
+                        case HANDSHAKE:
+                            HANDSHAKE_HANDLERS[packet_id](handle, client, &pr, pb);
+                            break;
+                        case STATUS:
+                            STATUS_HANDLERS[packet_id](handle, client, &pr, pb);
+                            break;
+                        case LOGIN:
+                            LOGIN_HANDLERS[packet_id](handle, client, &pr, pb);
+                            break;
+                        case TRANSFER:
+                            abort();
+                            break;
+                        case CONFIG:
+                            CONFIG_HANDLERS[packet_id](handle, client, &pr, pb);
+                            break;
+                        case PLAY:
+                          break;
+                        }
+
+                        current_idx += client->ri.packet_size;
+
+                        client->ri.read_left = 0;
+                        client->ri.packet_size = 0;
+                        client->ri.varint_pos = 0;
+                    } else {
+                        memcpy(client->ri.packet_data + client->ri.packet_data_write_pos, buf->base + current_idx, nread - current_idx);
+                        client->ri.packet_data_write_pos = nread - current_idx;
+                        client->ri.read_left = client->ri.packet_size - (nread - current_idx);
+                    }
+                }
+            } else {
+                int can_read = min(client->ri.read_left, nread);
+                client->ri.read_left -= can_read;
+
+                memcpy(client->ri.packet_data + client->ri.packet_data_write_pos, buf->base + current_idx, can_read);
+
+                if (client->ri.read_left == 0) {
+                    client->ri.packet_data_write_pos = 0;
+                    client->ri.packet_size = 0;
+                } else {
+                    client->ri.packet_data_write_pos += can_read;
+                }
+            }
         }
     } else {
         if (nread == UV_EOF) {
-            uv_shutdown(talloc(uv_shutdown_t), handle, client_close_connection_cb);
+            uv_close((uv_handle_t*)handle, client_close_connection_cb);
         } else {
             CHECK_UV(nread);
         }
@@ -89,17 +146,23 @@ static void new_connection_cb(uv_stream_t* server, int status) {
     assert(status >= 0);
 
     // TODO(eli): Client pools
-    uv_tcp_t* client = talloc(uv_tcp_t);
-    uv_tcp_init(loop, client);
+    uv_tcp_t* client_stream = talloc(uv_tcp_t);
+    uv_tcp_init(loop, client_stream);
 
-    client->data = tzalloc(Client);
+    ClientData* client_data = tzalloc(ClientData);
 
-    CHECK_UV(uv_accept(server, (uv_stream_t*)client));
-    uv_read_start((uv_stream_t*)client, default_alloc_cb, connection_read_cb);
+    uv_timer_init(loop, &client_data->heartbeat);
+    client_data->heartbeat.data = client_data;
+    client_data->client_stream = (uv_stream_t*)client_stream;
+
+    client_stream->data = client_data;
+    CHECK_UV(uv_accept(server, (uv_stream_t*)client_stream));
+    uv_read_start((uv_stream_t*)client_stream, default_alloc_cb, connection_read_cb);
 }
 
 int main() {
     loop = uv_default_loop();
+    srand(time(0));
     
     CHECK_UV(uv_poll_init(loop, &stdin_watcher, STDIN_FILENO));
     CHECK_UV(uv_poll_start(&stdin_watcher, UV_READABLE, on_stdin_ready));
@@ -110,9 +173,13 @@ int main() {
     struct sockaddr_in addr;
     CHECK_UV(uv_ip4_addr("0.0.0.0", 25565, &addr));
     CHECK_UV(uv_tcp_bind(&server, (const struct sockaddr*)&addr, 0));
+    CHECK_UV(uv_tcp_nodelay(&server, false));
     CHECK_UV(uv_listen((uv_stream_t*)&server, 128, new_connection_cb));
 
     uv_run(loop, UV_RUN_DEFAULT);
+
+    uv_close((uv_handle_t*)&server, NULL);
+    uv_close((uv_handle_t*)&stdin_watcher, NULL);
 
     uv_loop_close(loop);
     return 0;
