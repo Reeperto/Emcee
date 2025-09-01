@@ -4,17 +4,7 @@
 #include <uv.h>
 
 #include "cJSON.h"
-
-#ifndef NO_LOGGING
-#define LOG_PROC(TYPE, FMT, ...) fprintf(stderr, "["#TYPE"] " FMT "\n", ##__VA_ARGS__)
-#else
-#define LOG_PROC()
-#endif
-
-#define LOG_DEBUG(FMT, ...) LOG_PROC(DEBUG, FMT, ##__VA_ARGS__)
-#define LOG_TRACE(FMT, ...) LOG_PROC(TRACE, FMT, ##__VA_ARGS__)
-#define LOG_INFO(FMT, ...) LOG_PROC(INFO, FMT, ##__VA_ARGS__)
-#define LOG_WARN(FMT, ...) LOG_PROC(WARN, FMT, ##__VA_ARGS__)
+#include "log.h"
 
 #define JOBJ cJSON*
 

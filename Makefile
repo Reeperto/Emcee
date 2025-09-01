@@ -9,7 +9,7 @@ endif
 CFLAGS += $(shell pkg-config --cflags libuv)
 LFLAGS := $(shell pkg-config --libs   libuv)
 
-OBJS := cJSON.o packet.o packet_handlers.o client.o data_types.o server.o packet_types.o
+OBJS := cJSON.o packet.o packet_handlers.o client.o data_types.o server.o packet_types.o log.o
 OBJS := $(addprefix src/, $(OBJS))
 
 DEPS := $(OBJS:%.o=%.d)
