@@ -1,14 +1,28 @@
 #pragma once
 
+#include <math.h>
 #include <stdint.h>
 
 #define MAX_VARINT_LEN 5
 #define VARINT_SEGMENT_BITS 0x7F
 #define VARINT_CONTINUE_BIT 0x80
 
+typedef uint8_t u8;
+typedef uint16_t u16;
+typedef uint32_t u32;
+typedef uint64_t u64;
+
+typedef int8_t i8;
+typedef int16_t i16;
+typedef int32_t i32;
+typedef int64_t i64;
+
+typedef float f32;
+typedef double f64;
+
 typedef struct {
     int byte_count;
-    uint8_t bytes[MAX_VARINT_LEN];
+    u8 bytes[MAX_VARINT_LEN];
 } VarInt;
 
 VarInt varint_from_int(int val);
@@ -18,25 +32,28 @@ typedef struct {
     int len;
 } String;
 
+String string_from_cstr(const char* str);
+#define CSTR_TO_STR(CSTR) string_from_cstr((CSTR))
+
+void string_copy_to_cstr(char* dest, String src);
+
 typedef struct {
-    uint64_t inner[2];
+    u64 inner[2];
 } UUID;
 
 UUID uuid_make_random();
 
+typedef union {
+    f64 a[3];
+    struct {
+        f64 x, y, z;
+    };
+} Vec3;
+
 typedef struct {
-    int variant_count;
-    uint8_t* bits;
-} EnumSet;
+    i32 x, y, z;
+} Position;
 
-#define BITSET_STORAGE_BYTES(num_bits) (((num_bits) + 7) / 8)
-#define DEFINE_ENUMSET(name, nbits)                        \
-    struct {                                               \
-        EnumSet header;                                    \
-        unsigned char storage[BITSET_STORAGE_BYTES(nbits)];\
-    } name = { { (nbits), (name).storage }, {0} };
-
-#define enumset_set(set, variant) _enumset_set((EnumSet*)(set), (int)(variant))
-#define enumset_unset(set, variant) _enumset_unset((EnumSet*)(set), (int)(variant))
-void _enumset_set(EnumSet* set, int variant);
-void _enumset_unset(EnumSet* set, int variant);
+static inline i8 deg_to_angle(f32 degrees) {
+    return (i8)(fmodf(degrees, 360.0f) * (256.0f) / (360.0f));
+}

@@ -2,10 +2,15 @@
 
 #include <uv.h>
 
+#include "data_types.h"
 #include "packet.h"
 
-// Make the enum be a bitfield, that way we can define a table that matches a 
-// given protocol ID and state to function.
+typedef struct {
+    u32 eid;
+
+    Vec3 pos;
+} ClientPlayer;
+
 typedef enum {
     HANDSHAKE,
     STATUS,
@@ -13,25 +18,24 @@ typedef enum {
     TRANSFER,
     CONFIG,
     PLAY,
-} ClientState;
+} NetClientState;
+
+#define MAX_USERNAME_LEN 16
 
 typedef struct {
     uv_buf_t read_buffer;
     uv_stream_t* client_stream;
     uv_timer_t heartbeat;
 
-    struct { 
-        int read_left;
-        bool done_reading_size;
-        int packet_size;
-        int varint_pos;
-        uint8_t* packet_data;
-        int packet_data_write_pos;
-    } ri;
+    NetClientState state;
 
-    ClientState state;
+    PacketStream ps;
     PacketBuilder pb;
-} ClientData;
 
-void client_close_connection_cb(uv_handle_t* handle);
-void client_send_heartbeat_cb(uv_timer_t* handle);
+    char username[MAX_USERNAME_LEN + 1];
+    UUID uuid;
+    ClientPlayer player;
+} NetClientData;
+
+void net_client_close_connection_cb(uv_handle_t* handle);
+void net_client_send_heartbeat_cb(uv_timer_t* handle);

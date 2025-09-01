@@ -3,10 +3,11 @@
 #include "packet.h"
 #include "client.h"
 #include "packet_types.h"
+#include "util.h"
 
-typedef void (*PacketHandler)(uv_stream_t* handle, ClientData* client, PacketReader* pr, PacketBuilder* pb);
+typedef void (*PacketHandler)(uv_stream_t* handle, NetClientData* client, PacketReader* pr, PacketBuilder* pb);
 #define HANDLER_NAME(STATE, RESOURCE) packet_##STATE##_##RESOURCE
-#define HANDLER(STATE, RESOURCE) void HANDLER_NAME(STATE, RESOURCE)(uv_stream_t* handle, ClientData* client, PacketReader* pr, PacketBuilder* pb)
+#define HANDLER(STATE, RESOURCE) void HANDLER_NAME(STATE, RESOURCE)(uv_stream_t* handle, NetClientData* client, PacketReader* pr, PacketBuilder* pb)
 
 #define HANDSHAKE_PACKETS \
     X(P_H_SB_INTENTION, intention)
@@ -20,11 +21,16 @@ typedef void (*PacketHandler)(uv_stream_t* handle, ClientData* client, PacketRea
     X(P_L_SB_LOGIN_ACKNOWLEDGED, login_acknowledged)
 
 #define CONFIG_PACKETS \
-    X(P_C_SB_SELECT_KNOWN_PACKS,   select_known_packs) \
+    X(P_C_SB_SELECT_KNOWN_PACKS,   select_known_packs  ) \
     X(P_C_SB_FINISH_CONFIGURATION, finish_configuration)
 
 #define PLAY_PACKETS \
-    X(P_P_SB_CHAT_COMMAND, chat_command) 
+    X(P_P_SB_CHAT_COMMAND,        chat_command       ) \
+    X(P_P_SB_CHAT_COMMAND_SIGNED, chat_command_signed) \
+    X(P_P_SB_MOVE_PLAYER_POS,     move_player_pos    ) \
+    X(P_P_SB_MOVE_PLAYER_POS_ROT, move_player_pos_rot) \
+    X(P_P_SB_MOVE_PLAYER_ROT,     move_player_rot    ) \
+    X(P_P_SB_PLAYER_ACTION,       player_action      )
 
 #define X(ID, RESOURCE) HANDLER(HANDSHAKE, RESOURCE);
     HANDSHAKE_PACKETS
@@ -71,7 +77,7 @@ static const PacketHandler PLAY_HANDLERS[0xFF] = {
 #undef X
 };
 
-static inline void process_packet(int packet_id, uv_stream_t* handle, ClientData* client, PacketReader* pr, PacketBuilder* pb) {
+static inline void process_packet(int packet_id, uv_stream_t* handle, NetClientData* client, PacketReader* pr, PacketBuilder* pb) {
     PacketHandler handler = NULL;
 
     switch (client->state) {
@@ -97,5 +103,13 @@ static inline void process_packet(int packet_id, uv_stream_t* handle, ClientData
 
     if (handler != NULL) {
         handler(handle, client, pr, pb);
+    } else {
+        if (client->state == PLAY) {
+            if (packet_id == 0x0B || packet_id == 0x3B) {
+                return;
+            }
+        }
+
+        LOG_TRACE("Recieved packet id 0x%02X, ignoring", packet_id);
     }
 }

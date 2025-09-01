@@ -2,6 +2,7 @@
 
 #include <stdbool.h>
 #include <stdlib.h>
+#include <string.h>
 
 VarInt varint_from_int(int val) {
     VarInt res = {0};
@@ -24,6 +25,18 @@ VarInt varint_from_int(int val) {
     return res;
 }
 
+String string_from_cstr(const char* str) {
+    return (String){
+        .data = str,
+        .len = strlen(str)
+    };
+}
+
+void string_copy_to_cstr(char* dest, String src) {
+    memcpy(dest, src.data, src.len);
+    dest[src.len] = '\0';
+}
+
 // TODO(eli): This doesnt actually follow the uuid spec AT ALL. This should be 
 // replaced with a proper UUID generation mechanism.
 UUID uuid_make_random() {
@@ -33,10 +46,6 @@ UUID uuid_make_random() {
     };
 }
 
-void _enumset_set(EnumSet* es, int variant) {
-    es->bits[variant / 8] |= (1 << (variant % 8));
-}
-
-void _enumset_uset(EnumSet* es, int variant) {
-    es->bits[variant / 8] &= ~(1 << (variant % 8));
+void bitset_set(u8 *bits, int idx) {
+    bits[idx / 8] |= (1 << (idx % 8));
 }

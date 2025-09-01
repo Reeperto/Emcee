@@ -1,36 +1,23 @@
 #include "packet.h"
 
+#include <assert.h>
 #include <stdlib.h>
 #include <math.h>
+#include <string.h>
 
 #include "cJSON.h"
-#include "client.h"
 #include "data_types.h"
 
-uint32_t host_float_to_net(float val) {
-    uint32_t tmp;
-    memcpy(&tmp, &val, sizeof(uint32_t));
+u32 host_float_to_net(f32 val) {
+    u32 tmp;
+    memcpy(&tmp, &val, sizeof(u32));
     return tmp;
 }
 
-float net_float_to_host(uint32_t val) {
-    uint32_t host = ntohl(val);
-    float out;
-    memcpy(&out, &host, sizeof(float));
-    return out;
-}
-
-uint64_t host_double_to_net(double val) {
-    uint64_t tmp;
-    memcpy(&tmp, &val, sizeof(uint64_t));
+u64 host_double_to_net(double val) {
+    u64 tmp;
+    memcpy(&tmp, &val, sizeof(u64));
     return tmp;
-}
-
-double net_double_to_host(uint64_t val) {
-    uint64_t host = ntohll(val);
-    double out;
-    memcpy(&out, &host, sizeof(double));
-    return out;
 }
 
 void pr_delete(PacketReader* pr) {
@@ -55,36 +42,57 @@ void pr_read_copy(PacketReader* pr, void* dest, int count) {
     pr->pos += count;
 }
 
-uint8_t pr_read_u8(PacketReader* pr) {
-    pr_check_length(pr, sizeof(uint8_t));
+u8 pr_read_u8(PacketReader* pr) {
+    pr_check_length(pr, sizeof(u8));
     return pr->buffer.base[pr->pos++];
 }
 
-uint16_t pr_read_u16(PacketReader* pr) {
-    pr_check_length(pr, sizeof(uint16_t));
-    uint16_t val;
-    pr_read_copy(pr, &val, 2);
+u16 pr_read_u16(PacketReader* pr) {
+    pr_check_length(pr, sizeof(u16));
+    u16 val;
+    pr_read_copy(pr, &val, sizeof(u16));
     return ntohs(val);
 }
 
-int64_t pr_read_i64(PacketReader* pr) {
-    pr_check_length(pr, sizeof(int64_t));
-    int64_t val;
-    pr_read_copy(pr, &val, sizeof(int64_t));
-    return (int64_t)ntohll(val);
+u32 pr_read_u32(PacketReader* pr) {
+    pr_check_length(pr, sizeof(u32));
+    u32 val;
+    pr_read_copy(pr, &val, sizeof(u32));
+    return ntohl(val);
 }
 
-uint64_t pr_read_u64(PacketReader* pr) {
-    pr_check_length(pr, sizeof(uint64_t));
-    uint64_t val;
-    pr_read_copy(pr, &val, sizeof(uint64_t));
+u64 pr_read_u64(PacketReader* pr) {
+    pr_check_length(pr, sizeof(u64));
+    u64 val;
+    pr_read_copy(pr, &val, sizeof(u64));
     return ntohll(val);
 }
 
-int32_t pr_read_varint(PacketReader* pr) {
-    int32_t value = 0;
+i64 pr_read_i64(PacketReader* pr) {
+    pr_check_length(pr, sizeof(i64));
+    i64 val;
+    pr_read_copy(pr, &val, sizeof(i64));
+    return (i64)ntohll(val);
+}
+
+f32 pr_read_f32(PacketReader* pr) {
+    f32 val;
+    u32 backing = pr_read_u32(pr);
+    memcpy(&val, &backing, sizeof(f32));
+    return val;
+}
+
+f64 pr_read_f64(PacketReader* pr) {
+    f64 val;
+    u64 backing = pr_read_u64(pr);
+    memcpy(&val, &backing, sizeof(f64));
+    return val;
+}
+
+i32 pr_read_varint(PacketReader* pr) {
+    i32 value = 0;
     int position = 0;
-    uint8_t byte = 0;
+    u8 byte = 0;
 
     while (true) {
         byte = pr_read_u8(pr);
@@ -122,6 +130,16 @@ UUID pr_read_uuid(PacketReader *pr) {
     out.inner[1] = pr_read_u64(pr);
 
     return out;
+}
+
+Position pr_read_position(PacketReader* pr) {
+    i64 data = pr_read_i64(pr);
+
+    return (Position){
+        .x = data >> 38,
+        .y = data << 52 >> 52,
+        .z = data << 26 >> 38
+    };
 }
 
 // -----------------------------------------------------------------------------
@@ -162,7 +180,7 @@ uv_buf_t pb_finalize(PacketBuilder* pb) {
 
     VarInt packet_size = varint_from_int(pb->pos);
 
-    uint8_t* packet = malloc(packet_size.byte_count + pb->pos);
+    u8* packet = malloc(packet_size.byte_count + pb->pos);
     memcpy(packet, packet_size.bytes, packet_size.byte_count);
     memcpy(packet + packet_size.byte_count, pb->bytes, pb->pos);
 
@@ -176,60 +194,56 @@ void pb_write_copy(PacketBuilder* pb, const void* src, int count) {
 }
 
 void pb_write_bool(PacketBuilder* pb, bool val) {
-    if (val) {
-        pb_write_u8(pb, 1);
-    } else {
-        pb_write_u8(pb, 0);
-    }
+    pb_write_u8(pb, (u8)val);
 }
 
-void pb_write_u8(PacketBuilder* pb, uint8_t val) {
-    pb_extend(pb, sizeof(uint8_t));
+void pb_write_u8(PacketBuilder* pb, u8 val) {
+    pb_extend(pb, sizeof(u8));
     pb->bytes[pb->pos++] = val;
 }
 
-void pb_write_i8(PacketBuilder* pb, int8_t val) {
-    pb_extend(pb, sizeof(int8_t));
-    pb->bytes[pb->pos++] = (uint8_t)(val);
+void pb_write_i8(PacketBuilder* pb, i8 val) {
+    pb_extend(pb, sizeof(i8));
+    pb->bytes[pb->pos++] = (u8)(val);
 }
 
-void pb_write_u16(PacketBuilder* pb, uint16_t val) {
-    uint16_t big_end = htons(val);
-    pb_write_copy(pb, &big_end, sizeof(uint16_t));
+void pb_write_u16(PacketBuilder* pb, u16 val) {
+    u16 big_end = htons(val);
+    pb_write_copy(pb, &big_end, sizeof(u16));
 }
 
-void pb_write_i16(PacketBuilder* pb, int16_t val) {
-    int16_t big_end = htons(val);
-    pb_write_copy(pb, &big_end, sizeof(int16_t));
+void pb_write_i16(PacketBuilder* pb, i16 val) {
+    i16 big_end = htons(val);
+    pb_write_copy(pb, &big_end, sizeof(i16));
 }
 
-void pb_write_u32(PacketBuilder* pb, uint32_t val) {
-    uint32_t big_end = htonl(val);
-    pb_write_copy(pb, &big_end, sizeof(uint32_t));
+void pb_write_u32(PacketBuilder* pb, u32 val) {
+    u32 big_end = htonl(val);
+    pb_write_copy(pb, &big_end, sizeof(u32));
 }
 
-void pb_write_i32(PacketBuilder* pb, int32_t val) {
-    int32_t big_end = htonl(val);
-    pb_write_copy(pb, &big_end, sizeof(int32_t));
+void pb_write_i32(PacketBuilder* pb, i32 val) {
+    i32 big_end = htonl(val);
+    pb_write_copy(pb, &big_end, sizeof(i32));
 }
 
-void pb_write_u64(PacketBuilder* pb, uint64_t val) {
-    uint64_t big_end = htonll(val);
-    pb_write_copy(pb, &big_end, sizeof(uint64_t));
+void pb_write_u64(PacketBuilder* pb, u64 val) {
+    u64 big_end = htonll(val);
+    pb_write_copy(pb, &big_end, sizeof(u64));
 }
 
-void pb_write_i64(PacketBuilder* pb, int64_t val) {
-    int64_t big_end = htonll(val);
-    pb_write_copy(pb, &big_end, sizeof(int64_t));
+void pb_write_i64(PacketBuilder* pb, i64 val) {
+    i64 big_end = htonll(val);
+    pb_write_copy(pb, &big_end, sizeof(i64));
 }
 
-void pb_write_f32(PacketBuilder* pb, float val) {
-    uint32_t data = host_float_to_net(val);
+void pb_write_f32(PacketBuilder* pb, f32 val) {
+    u32 data = host_float_to_net(val);
     pb_write_u32(pb, data);
 }
 
-void pb_write_f64(PacketBuilder* pb, double val) {
-    uint64_t data = host_double_to_net(val);
+void pb_write_f64(PacketBuilder* pb, f64 val) {
+    u64 data = host_double_to_net(val);
     pb_write_u64(pb, data);
 }
 
@@ -271,59 +285,49 @@ void pb_write_uuid(PacketBuilder* pb, UUID uuid) {
     pb_write_u64(pb, uuid.inner[1]);
 }
 
-void _pb_write_enumset(PacketBuilder* pb, EnumSet* set) {
-    pb_write_copy(pb, set->bits, BITSET_STORAGE_BYTES(set->variant_count));
+void pb_write_position(PacketBuilder* pb, Position pos) {
+    i64 x = pos.x;
+    i64 y = pos.y;
+    i64 z = pos.z;
+
+    i64 encoded = ((x & 0x3FFFFFF) << 38) | ((z & 0x3FFFFFF) << 12) | (y & 0xFFF);
+
+    pb_write_u64(pb, encoded);
+}
+
+void pb_nbt_write_name(PacketBuilder* pb, const char* f_name) {
+    if (f_name && strcmp(f_name, "") != 0) {
+        int f_len = strlen(f_name);
+        pb_write_u16(pb, f_len);
+        pb_write_copy(pb, f_name, f_len);
+    }
 }
 
 void pb_nbt_end(PacketBuilder* pb) {
     pb_write_u8(pb, TAG_End);
 }
 
-void pb_nbt_byte(PacketBuilder* pb, int8_t val, const char* f_name) {
+void pb_nbt_byte(PacketBuilder* pb, i8 val, const char* f_name) {
     pb_write_u8(pb, TAG_Byte);
-
-    if (f_name && strcmp(f_name, "") != 0) {
-        int f_len = strlen(f_name);
-        pb_write_u16(pb, f_len);
-        pb_write_copy(pb, f_name, f_len);
-    }
-
+    pb_nbt_write_name(pb, f_name);
     pb_write_i8(pb, val);
 }
 
-void pb_nbt_int(PacketBuilder* pb, int32_t val, const char* f_name) {
+void pb_nbt_int(PacketBuilder* pb, i32 val, const char* f_name) {
     pb_write_u8(pb, TAG_Int);
-
-    if (f_name && strcmp(f_name, "") != 0) {
-        int f_len = strlen(f_name);
-        pb_write_u16(pb, f_len);
-        pb_write_copy(pb, f_name, f_len);
-    }
-
+    pb_nbt_write_name(pb, f_name);
     pb_write_i32(pb, val);
 }
 
-void pb_nbt_double(PacketBuilder* pb, double val, const char* f_name) {
+void pb_nbt_double(PacketBuilder* pb, f64 val, const char* f_name) {
     pb_write_u8(pb, TAG_Double);
-
-    if (f_name && strcmp(f_name, "") != 0) {
-        int f_len = strlen(f_name);
-        pb_write_u16(pb, f_len);
-        pb_write_copy(pb, f_name, f_len);
-    }
-
+    pb_nbt_write_name(pb, f_name);
     pb_write_f64(pb, val);
 }
 
 void pb_nbt_string(PacketBuilder* pb, String str, const char* f_name) {
     pb_write_u8(pb, TAG_String);
-
-    if (f_name && strcmp(f_name, "") != 0) {
-        int f_len = strlen(f_name);
-        pb_write_u16(pb, f_len);
-        pb_write_copy(pb, f_name, f_len);
-    }
-
+    pb_nbt_write_name(pb, f_name);
     pb_write_u16(pb, str.len);
     pb_write_copy(pb, str.data, str.len);
 }
@@ -334,25 +338,14 @@ void pb_nbt_string_c(PacketBuilder* pb, const char* str, const char* f_name) {
 
 void pb_nbt_list(PacketBuilder* pb, NBTTag element_type, int size, const char* f_name) {
     pb_write_u8(pb, TAG_List);
-
-    if (f_name && strcmp(f_name, "") != 0) {
-        int f_len = strlen(f_name);
-        pb_write_u16(pb, f_len);
-        pb_write_copy(pb, f_name, f_len);
-    }
-
+    pb_nbt_write_name(pb, f_name);
     pb_write_u8(pb, element_type);
     pb_write_i32(pb, size);
 }
 
 void pb_nbt_compound(PacketBuilder* pb, const char* f_name) {
     pb_write_u8(pb, TAG_Compound);
-
-    if (f_name && strcmp(f_name, "") != 0) {
-        int f_len = strlen(f_name);
-        pb_write_u16(pb, f_len);
-        pb_write_copy(pb, f_name, f_len);
-    }
+    pb_nbt_write_name(pb, f_name);
 }
 
 void pb_json_to_nbt_recur(PacketBuilder* pb, JOBJ json) {
@@ -383,7 +376,7 @@ void pb_json_to_nbt_recur(PacketBuilder* pb, JOBJ json) {
             }
             case cJSON_Number: {
                 if (floor(e->valuedouble) == e->valuedouble) {
-                    int32_t int_val = e->valuedouble;
+                    i32 int_val = e->valuedouble;
                     pb_nbt_int(pb, int_val, e->string);
                 } else {
                     pb_nbt_double(pb, e->valuedouble, e->string);
@@ -406,39 +399,29 @@ void pb_json_to_nbt_recur(PacketBuilder* pb, JOBJ json) {
 
 void pb_nbt_from_json(PacketBuilder* pb, JOBJ json) {
     pb_nbt_compound(pb, NULL);
-    LOG_TRACE("JSON_PAYLOAD = %s", cJSON_Print(json));
     pb_json_to_nbt_recur(pb, json);
     pb_nbt_end(pb);
 }
 
 typedef struct {
-    uv_buf_t buf;
-    bool close_connection;
-} packet_sent_data_t;
+    uv_write_t req;
+    uv_buf_t packet_buf;
+} PacketSentWrapper;
 
 static void packet_sent_cb(uv_write_t* packet_write, int status) {
-    packet_sent_data_t* data = packet_write->data;
-
-    if (data->close_connection) {
-        uv_close((uv_handle_t*)packet_write->handle, client_close_connection_cb);
-    }
-
-    free(data->buf.base);
-    free(data);
+    free(((PacketSentWrapper*)(packet_write))->packet_buf.base);
     free(packet_write);
 }
 
-void send_finalized_packet(PacketBuilder* pb, uv_stream_t* handle, bool should_close) {
-    packet_sent_data_t* data = talloc(packet_sent_data_t);
-
+void send_finalized_packet(PacketBuilder* pb, uv_stream_t* handle, bool reset_pb) {
     uv_buf_t packet_data = pb_finalize(pb);
-    pb_reset(pb);
 
-    data->buf = packet_data;
-    data->close_connection = should_close;
+    if (reset_pb) {
+        pb_reset(pb);
+    }
 
-    uv_write_t* write_req = talloc(uv_write_t);
-    write_req->data = data;
+    PacketSentWrapper* write_info = talloc(PacketSentWrapper);
+    write_info->packet_buf = packet_data;
 
-    uv_write(write_req, handle, &packet_data, 1, packet_sent_cb);
+    uv_write((uv_write_t*)write_info, handle, &packet_data, 1, packet_sent_cb);
 }

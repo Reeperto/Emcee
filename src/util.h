@@ -71,6 +71,10 @@ BLOCK \
     }                                                   \
 } while(0) 
 
+#define typeof __typeof__
+
+#define ANON_ARRAY(EXPR) (typeof(*(EXPR))[])
+
 #define max(a,b)             \
 ({                           \
     __typeof__ (a) _a = (a); \

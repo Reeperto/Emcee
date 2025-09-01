@@ -1,11 +1,13 @@
 #include <assert.h>
 #include <stdlib.h>
+#include <string.h>
 #include <unistd.h>
 #include <uv.h>
 
 #include "client.h"
 #include "packet.h"
 #include "packet_handlers.h"
+#include "server.h"
 #include "util.h"
 
 uv_loop_t* loop;
@@ -27,7 +29,7 @@ void on_stdin_ready(uv_poll_t* handle, int status, int events) {
 #define DEFAULT_BUFFER_SIZE 32768
 
 static void default_alloc_cb(uv_handle_t* handle, size_t suggested_size, uv_buf_t* buf) {
-    ClientData* client = (ClientData*)handle->data;
+    NetClientData* client = (NetClientData*)handle->data;
 
     if (client->read_buffer.len == 0) {
         client->read_buffer = (uv_buf_t){
@@ -39,7 +41,7 @@ static void default_alloc_cb(uv_handle_t* handle, size_t suggested_size, uv_buf_
     *buf = client->read_buffer;
 }
 
-bool build_varint(uint8_t byte, int* curr_pos, int* val) {
+bool build_varint(u8 byte, int* curr_pos, int* val) {
     *val |= (byte & VARINT_SEGMENT_BITS) << *curr_pos;
 
     if ((byte & VARINT_CONTINUE_BIT) == 0) return true;
@@ -52,72 +54,71 @@ bool build_varint(uint8_t byte, int* curr_pos, int* val) {
 void connection_read_cb(uv_stream_t* handle,
                         ssize_t nread,
                         const uv_buf_t* buf) {
-    ClientData* client = handle->data;
+    NetClientData* client = handle->data;
+    PacketStream* ps = &client->ps;
 
     int current_idx = 0;
 
     if (nread > 0) {
-        // LOG_DEBUG("Recieved %ld bytes", nread);
-
         while (true) {
             if (current_idx >= nread) {
                 break;
             }
 
-            if (client->ri.read_left == 0) {
+            if (ps->remaining_bytes == 0) {
                 // The current buffer represents the start of a new sequence of packets
-                while (!client->ri.done_reading_size && current_idx < nread) {
-                    client->ri.done_reading_size |= build_varint(buf->base[current_idx], &client->ri.varint_pos, &client->ri.packet_size);
+                while (!ps->done_reading_size && current_idx < nread) {
+                    ps->done_reading_size |= build_varint(buf->base[current_idx], &ps->varint_pos, &ps->packet_size);
                     ++current_idx;
                 }
 
-                if (client->ri.done_reading_size) {
-                    client->ri.done_reading_size = false;
+                if (ps->done_reading_size) {
+                    ps->done_reading_size = false;
 
-                    client->ri.packet_data = realloc(client->ri.packet_data, client->ri.packet_size);
+                    ps->packet_data = realloc(ps->packet_data, ps->packet_size);
 
-                    if (current_idx + client->ri.packet_size <= nread) {
+                    if (current_idx + ps->packet_size <= nread) {
                         // Entire packet is in this buffer
-                        memcpy(client->ri.packet_data, buf->base + current_idx, client->ri.packet_size);
+                        memcpy(ps->packet_data, buf->base + current_idx, ps->packet_size);
 
-                        PacketReader pr = pr_from_uv((uv_buf_t){ .base = (char*)client->ri.packet_data, .len = client->ri.packet_size });
+                        PacketReader pr = pr_from_uv((uv_buf_t){ .base = (char*)ps->packet_data, .len = ps->packet_size });
                         PacketBuilder* pb = &client->pb;
                         pb_reset(pb);
                         
                         int packet_id = pr_read_varint(&pr);
 
-                        // LOG_DEBUG("Received packet { state = %d, id = 0x%02X, len = %d }", client->state, packet_id, client->ri.packet_size);
+                        // LOG_DEBUG("Received packet { state = %d, id = 0x%02X, len = %d }", client->state, packet_id, ps->packet_size);
 
                         process_packet(packet_id, handle, client, &pr, pb);
 
-                        current_idx += client->ri.packet_size;
+                        current_idx += ps->packet_size;
 
-                        client->ri.read_left = 0;
-                        client->ri.packet_size = 0;
-                        client->ri.varint_pos = 0;
+                        ps->remaining_bytes = 0;
+                        ps->packet_size = 0;
+                        ps->varint_pos = 0;
                     } else {
-                        memcpy(client->ri.packet_data + client->ri.packet_data_write_pos, buf->base + current_idx, nread - current_idx);
-                        client->ri.packet_data_write_pos = nread - current_idx;
-                        client->ri.read_left = client->ri.packet_size - (nread - current_idx);
+                        memcpy(ps->packet_data + ps->packet_data_write_pos, buf->base + current_idx, nread - current_idx);
+                        ps->packet_data_write_pos = nread - current_idx;
+                        ps->remaining_bytes = ps->packet_size - (nread - current_idx);
                     }
                 }
             } else {
-                int can_read = min(client->ri.read_left, nread);
-                client->ri.read_left -= can_read;
+                int can_read = min(ps->remaining_bytes, nread);
+                ps->remaining_bytes -= can_read;
 
-                memcpy(client->ri.packet_data + client->ri.packet_data_write_pos, buf->base + current_idx, can_read);
+                memcpy(ps->packet_data + ps->packet_data_write_pos, buf->base + current_idx, can_read);
 
-                if (client->ri.read_left == 0) {
-                    client->ri.packet_data_write_pos = 0;
-                    client->ri.packet_size = 0;
+                if (ps->remaining_bytes == 0) {
+                    ps->packet_data_write_pos = 0;
+                    ps->packet_size = 0;
                 } else {
-                    client->ri.packet_data_write_pos += can_read;
+                    ps->packet_data_write_pos += can_read;
                 }
             }
         }
     } else {
         if (nread == UV_EOF) {
-            uv_close((uv_handle_t*)handle, client_close_connection_cb);
+            uv_close((uv_handle_t*)handle, net_client_close_connection_cb);
         } else {
             CHECK_UV(nread);
         }
@@ -131,7 +132,7 @@ static void new_connection_cb(uv_stream_t* server, int status) {
     uv_tcp_t* client_stream = talloc(uv_tcp_t);
     uv_tcp_init(loop, client_stream);
 
-    ClientData* client_data = tzalloc(ClientData);
+    NetClientData* client_data = server_new_client(&g_server);
 
     uv_timer_init(loop, &client_data->heartbeat);
     client_data->heartbeat.data = client_data;
@@ -143,6 +144,7 @@ static void new_connection_cb(uv_stream_t* server, int status) {
 }
 
 int main() {
+    server_init(&g_server);
     loop = uv_default_loop();
     srand(time(0));
     

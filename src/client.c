@@ -3,30 +3,31 @@
 #include <stdlib.h>
 
 #include "packet_types.h"
+#include "server.h"
 #include "util.h"
 
-void client_close_connection_cb(uv_handle_t* handle) {
+void net_client_close_connection_cb(uv_handle_t* handle) {
     LOG_INFO("Closing client");
-    ClientData* client = (ClientData*)(handle->data);
-
+    NetClientData* client = (NetClientData*)(handle->data);
     uv_timer_stop(&client->heartbeat);
 
     pb_delete(&client->pb);
     free(client->read_buffer.base);
-    free(client->ri.packet_data);
+    free(client->ps.packet_data);
 
-    free(client);
+    server_free_client(&g_server, client);
+
     free(handle);
 }
 
-void client_send_heartbeat_cb(uv_timer_t* handle) {
-    ClientData* client = handle->data;
+void net_client_send_heartbeat_cb(uv_timer_t* handle) {
+    NetClientData* client = handle->data;
     PacketBuilder* pb = &client->pb;
 
     LOG_TRACE("S -> C: keep_alive");
     pb_reset(pb);
     pb_write_id(pb, P_P_CB_KEEP_ALIVE);
-    pb_write_i64(pb, (int64_t)(rand()));
+    pb_write_i64(pb, (i64)(rand()));
 
     send_finalized_packet(pb, client->client_stream, false);
 }
