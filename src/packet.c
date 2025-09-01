@@ -6,6 +6,7 @@
 
 #include "cJSON.h"
 #include "data_types.h"
+#include "endian.h"
 
 u32 host_float_to_net(f32 val) {
     u32 tmp;
@@ -51,28 +52,28 @@ u16 pr_read_u16(PacketReader* pr) {
     pr_check_length(pr, sizeof(u16));
     u16 val;
     pr_read_copy(pr, &val, sizeof(u16));
-    return ntohs(val);
+    return from_be16(val);
 }
 
 u32 pr_read_u32(PacketReader* pr) {
     pr_check_length(pr, sizeof(u32));
     u32 val;
     pr_read_copy(pr, &val, sizeof(u32));
-    return ntohl(val);
+    return from_be32(val);
 }
 
 u64 pr_read_u64(PacketReader* pr) {
     pr_check_length(pr, sizeof(u64));
     u64 val;
     pr_read_copy(pr, &val, sizeof(u64));
-    return ntohll(val);
+    return from_be64(val);
 }
 
 i64 pr_read_i64(PacketReader* pr) {
     pr_check_length(pr, sizeof(i64));
     i64 val;
     pr_read_copy(pr, &val, sizeof(i64));
-    return (i64)ntohll(val);
+    return (i64)from_be64(val);
 }
 
 f32 pr_read_f32(PacketReader* pr) {
@@ -208,32 +209,32 @@ void pb_write_i8(PacketBuilder* pb, i8 val) {
 }
 
 void pb_write_u16(PacketBuilder* pb, u16 val) {
-    u16 big_end = htons(val);
+    u16 big_end = to_be16(val);
     pb_write_copy(pb, &big_end, sizeof(u16));
 }
 
 void pb_write_i16(PacketBuilder* pb, i16 val) {
-    i16 big_end = htons(val);
+    i16 big_end = to_be16(val);
     pb_write_copy(pb, &big_end, sizeof(i16));
 }
 
 void pb_write_u32(PacketBuilder* pb, u32 val) {
-    u32 big_end = htonl(val);
+    u32 big_end = to_be32(val);
     pb_write_copy(pb, &big_end, sizeof(u32));
 }
 
 void pb_write_i32(PacketBuilder* pb, i32 val) {
-    i32 big_end = htonl(val);
+    i32 big_end = to_be32(val);
     pb_write_copy(pb, &big_end, sizeof(i32));
 }
 
 void pb_write_u64(PacketBuilder* pb, u64 val) {
-    u64 big_end = htonll(val);
+    u64 big_end = to_be64(val);
     pb_write_copy(pb, &big_end, sizeof(u64));
 }
 
 void pb_write_i64(PacketBuilder* pb, i64 val) {
-    i64 big_end = htonll(val);
+    i64 big_end = to_be64(val);
     pb_write_copy(pb, &big_end, sizeof(i64));
 }
 

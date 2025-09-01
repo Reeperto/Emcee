@@ -1,4 +1,5 @@
-CFLAGS := -std=c11 -g -ggdb -Wall
+CFLAGS := -std=c99 -D_XOPEN_SOURCE=600 -g -ggdb -Wall
+LFLAGS := -lm
 
 SANITIZE ?= 0
 
@@ -7,9 +8,9 @@ ifeq ($(SANITIZE),1)
 endif
 
 CFLAGS += $(shell pkg-config --cflags libuv)
-LFLAGS := $(shell pkg-config --libs   libuv)
+LFLAGS += $(shell pkg-config --libs   libuv)
 
-OBJS := cJSON.o packet.o packet_handlers.o client.o data_types.o server.o packet_types.o log.o
+OBJS := cJSON.o packet.o packet_handlers.o client.o data_types.o server.o packet_types.o log.o endian.o
 OBJS := $(addprefix src/, $(OBJS))
 
 DEPS := $(OBJS:%.o=%.d)

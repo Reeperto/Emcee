@@ -3,4 +3,5 @@
 *.o
 .DS_Store
 emcee
+emcee_tests
 compile_commands.json

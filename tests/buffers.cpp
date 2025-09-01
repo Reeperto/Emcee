@@ -20,29 +20,28 @@ void __tsan_on_report() {
 }  // extern "C"
 
 TEST(BufferUtils, VarInt) {
-    uint8_t varint[5] = {};
-    int byte_count;
+    VarInt out;
 
-    convert_to_varint(0, varint, &byte_count);
-    EXPECT_EQ(byte_count, 1);
-    EXPECT_EQ(varint[0], 0x00);
+    out = varint_from_int(0);
+    EXPECT_EQ(out.byte_count, 1);
+    EXPECT_EQ(out.bytes[0], 0x00);
 
-    convert_to_varint(1, varint, &byte_count);
-    EXPECT_EQ(byte_count, 1);
-    EXPECT_EQ(varint[0], 0x01);
+    out = varint_from_int(1);
+    EXPECT_EQ(out.byte_count, 1);
+    EXPECT_EQ(out.bytes[0], 0x01);
 
-    convert_to_varint(2, varint, &byte_count);
-    EXPECT_EQ(byte_count, 1);
-    EXPECT_EQ(varint[0], 0x02);
+    out = varint_from_int(2);
+    EXPECT_EQ(out.byte_count, 1);
+    EXPECT_EQ(out.bytes[0], 0x02);
 
-    convert_to_varint(127, varint, &byte_count);
-    EXPECT_EQ(byte_count, 1);
-    EXPECT_EQ(varint[0], 0x7f);
+    out = varint_from_int(127);
+    EXPECT_EQ(out.byte_count, 1);
+    EXPECT_EQ(out.bytes[0], 0x7f);
 
-    convert_to_varint(128, varint, &byte_count);
-    EXPECT_EQ(byte_count, 2);
-    EXPECT_EQ(varint[0], 0x80);
-    EXPECT_EQ(varint[1], 0x01);
+    out = varint_from_int(128);
+    EXPECT_EQ(out.byte_count, 2);
+    EXPECT_EQ(out.bytes[0], 0x80);
+    EXPECT_EQ(out.bytes[1], 0x01);
 }
 
 TEST(PacketBuilder, EmptyPacket) {
@@ -67,17 +66,16 @@ TEST(PacketBuilder, DataTypes) {
     EXPECT_EQ(packet.base[1], '\x00');
 }
 
-// TEST(PacketBuilder, JsonToNBT) {
-//     PacketBuilder pb = {0};
-//
-//     const char* example_json = 
-//         "{" 
-//             "\"asset_id\": \"minecraft:entity/cat/cat\","
-//             "\"spawn_conditions\": ["
-//                 "{ \"priority\": 0 }"
-//             "]"
-//         "}"
-//     ;
-//
-//     pb_json_to_nbt(&pb, cJSON_Parse(example_json));
-// }
+TEST(PacketBuilder, JsonToNBT) {
+    PacketBuilder pb = {0};
+
+    const char* example_json = 
+        R"({ 
+            "asset_id": "minecraft:entity/cat/cat",
+            "spawn_conditions": [
+                { "priority": 0 }
+            ]
+        })";
+
+    pb_nbt_from_json(&pb, cJSON_Parse(example_json));
+}

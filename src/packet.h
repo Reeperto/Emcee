@@ -1,6 +1,5 @@
 #pragma once
 
-#include <arpa/inet.h>
 #include <stdbool.h>
 #include <stdint.h>
 #include <uv.h>

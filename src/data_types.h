@@ -2,6 +2,7 @@
 
 #include <math.h>
 #include <stdint.h>
+#include <stdbool.h>
 
 #define MAX_VARINT_LEN 5
 #define VARINT_SEGMENT_BITS 0x7F

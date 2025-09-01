@@ -4,6 +4,7 @@
 #include <uv.h>
 
 #include "client.h"
+#include "endian.h"
 #include "packet.h"
 #include "packet_handlers.h"
 #include "server.h"
@@ -154,6 +155,7 @@ static void new_connection_cb(uv_stream_t* server, int status) {
 }
 
 int main() {
+    init_endianess();
     server_init(&g_server);
     loop = uv_default_loop();
     srand(time(0));
