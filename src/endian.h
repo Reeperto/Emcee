@@ -1,12 +1,8 @@
 #pragma once
 
-#include <arpa/inet.h>
-
 #include "data_types.h"
 
-extern bool IS_LITTLE_ENDIAN;
-
-void init_endianess();
+void init_endianness();
 
 u16 to_be16(u16 val);
 u32 to_be32(u32 val);

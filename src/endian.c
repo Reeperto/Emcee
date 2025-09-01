@@ -1,8 +1,10 @@
 #include "endian.h"
 
+#include <arpa/inet.h>
+
 bool IS_LITTLE_ENDIAN;
 
-void init_endianess() {
+void init_endianness() {
     IS_LITTLE_ENDIAN = !(1 == htonl(1));
 }
 

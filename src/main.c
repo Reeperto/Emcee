@@ -155,7 +155,7 @@ static void new_connection_cb(uv_stream_t* server, int status) {
 }
 
 int main() {
-    init_endianess();
+    init_endianness();
     server_init(&g_server);
     loop = uv_default_loop();
     srand(time(0));
