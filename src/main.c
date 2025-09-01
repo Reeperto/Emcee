@@ -51,76 +51,87 @@ bool build_varint(u8 byte, int* curr_pos, int* val) {
     return false;
 }
 
-void connection_read_cb(uv_stream_t* handle,
-                        ssize_t nread,
-                        const uv_buf_t* buf) {
+void connection_read_cb(
+    uv_stream_t* handle,
+    ssize_t nread,
+    const uv_buf_t* buf
+) {
     NetClientData* client = handle->data;
     PacketStream* ps = &client->ps;
 
     int current_idx = 0;
 
-    if (nread > 0) {
-        while (true) {
-            if (current_idx >= nread) {
+    if (nread == UV_EOF) {
+        uv_close((uv_handle_t*)handle, net_client_close_connection_cb);
+        return;
+    } else if (nread < 0) {
+        CHECK_UV(nread);
+        return;
+    }
+
+    while (current_idx < nread || ps->state == STATE_PROCESS_PACKET) {
+        switch (ps->state) {
+            case STATE_READ_LEN: {
+                bool done_reading_size = build_varint(
+                    buf->base[current_idx],
+                    &ps->varint_pos,
+                    &ps->packet_size
+                );
+                ++current_idx;
+
+                if (done_reading_size) {
+                    ps->state = STATE_ALLOC_BUF;
+                }
                 break;
             }
 
-            if (ps->remaining_bytes == 0) {
-                // The current buffer represents the start of a new sequence of packets
-                while (!ps->done_reading_size && current_idx < nread) {
-                    ps->done_reading_size |= build_varint(buf->base[current_idx], &ps->varint_pos, &ps->packet_size);
-                    ++current_idx;
-                }
+            case STATE_ALLOC_BUF: {
+                // NOTE(eli): This could probably be heavily abused since 
+                // packet sizes are not being checked. Furthermore the buffer 
+                // can only grow, never shrink
+                ps->packet_data = realloc(ps->packet_data, ps->packet_size);
+                ps->remaining_bytes = ps->packet_size;
+                ps->packet_data_write_pos = 0;
+                ps->state = STATE_READ_PAYLOAD;
+                break;
+            }
 
-                if (ps->done_reading_size) {
-                    ps->done_reading_size = false;
+            case STATE_READ_PAYLOAD: {
+                int can_read = min(ps->remaining_bytes, nread - current_idx);
 
-                    ps->packet_data = realloc(ps->packet_data, ps->packet_size);
+                memcpy(
+                    ps->packet_data + ps->packet_data_write_pos,
+                    buf->base + current_idx, 
+                    can_read
+                );
 
-                    if (current_idx + ps->packet_size <= nread) {
-                        // Entire packet is in this buffer
-                        memcpy(ps->packet_data, buf->base + current_idx, ps->packet_size);
-
-                        PacketReader pr = pr_from_uv((uv_buf_t){ .base = (char*)ps->packet_data, .len = ps->packet_size });
-                        PacketBuilder* pb = &client->pb;
-                        pb_reset(pb);
-                        
-                        int packet_id = pr_read_varint(&pr);
-
-                        // LOG_DEBUG("Received packet { state = %d, id = 0x%02X, len = %d }", client->state, packet_id, ps->packet_size);
-
-                        process_packet(packet_id, handle, client, &pr, pb);
-
-                        current_idx += ps->packet_size;
-
-                        ps->remaining_bytes = 0;
-                        ps->packet_size = 0;
-                        ps->varint_pos = 0;
-                    } else {
-                        memcpy(ps->packet_data + ps->packet_data_write_pos, buf->base + current_idx, nread - current_idx);
-                        ps->packet_data_write_pos = nread - current_idx;
-                        ps->remaining_bytes = ps->packet_size - (nread - current_idx);
-                    }
-                }
-            } else {
-                int can_read = min(ps->remaining_bytes, nread);
+                current_idx += can_read;
+                ps->packet_data_write_pos += can_read;
                 ps->remaining_bytes -= can_read;
 
-                memcpy(ps->packet_data + ps->packet_data_write_pos, buf->base + current_idx, can_read);
-
                 if (ps->remaining_bytes == 0) {
-                    ps->packet_data_write_pos = 0;
-                    ps->packet_size = 0;
-                } else {
-                    ps->packet_data_write_pos += can_read;
+                    ps->state = STATE_PROCESS_PACKET;
                 }
+
+                break;
             }
-        }
-    } else {
-        if (nread == UV_EOF) {
-            uv_close((uv_handle_t*)handle, net_client_close_connection_cb);
-        } else {
-            CHECK_UV(nread);
+
+            case STATE_PROCESS_PACKET: {
+                PacketReader pr = pr_from_pointer_len(
+                    ps->packet_data,
+                    ps->packet_size
+                );
+
+                PacketBuilder* pb = &client->pb;
+                pb_reset(pb);
+
+                int packet_id = pr_read_varint(&pr);
+                process_packet(packet_id, handle, client, &pr, pb);
+
+                ps->packet_size = 0;
+                ps->varint_pos = 0;
+                ps->state = STATE_READ_LEN;
+            }
         }
     }
 }

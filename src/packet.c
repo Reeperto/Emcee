@@ -21,30 +21,31 @@ u64 host_double_to_net(double val) {
 }
 
 void pr_delete(PacketReader* pr) {
-    free(pr->buffer.base);
+    free(pr->data);
     memset(pr, 0, sizeof(PacketReader));
 }
 
-PacketReader pr_from_uv(uv_buf_t buf) {
+PacketReader pr_from_pointer_len(u8* data, int len) {
     return (PacketReader){
-        .buffer = buf,
+        .data = data,
+        .len = len,
         .pos = 0
     };
 }
 
 static void pr_check_length(PacketReader* pr, int len) {
-    assert(pr->pos + len <= pr->buffer.len);
+    assert(pr->pos + len <= pr->len);
 }
 
 void pr_read_copy(PacketReader* pr, void* dest, int count) {
     pr_check_length(pr, count);
-    memcpy(dest, &pr->buffer.base[pr->pos], count);
+    memcpy(dest, &pr->data[pr->pos], count);
     pr->pos += count;
 }
 
 u8 pr_read_u8(PacketReader* pr) {
     pr_check_length(pr, sizeof(u8));
-    return pr->buffer.base[pr->pos++];
+    return pr->data[pr->pos++];
 }
 
 u16 pr_read_u16(PacketReader* pr) {
@@ -115,7 +116,7 @@ String pr_read_string(PacketReader* pr) {
     pr_check_length(pr, len);
 
     String str = (String){
-        .data = &pr->buffer.base[pr->pos],
+        .data = (char*)&pr->data[pr->pos],
         .len = len
     };
 

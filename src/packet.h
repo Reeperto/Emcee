@@ -10,22 +10,32 @@
 #include "data_types.h"
 #include "util.h"
 
+typedef enum {
+    STATE_READ_LEN,     
+    STATE_ALLOC_BUF,    
+    STATE_READ_PAYLOAD, 
+    STATE_PROCESS_PACKET
+} PacketParseState;
+
 typedef struct {
-    int remaining_bytes;
-    bool done_reading_size;
+    PacketParseState state;
+
     int packet_size;
     int varint_pos;
-    u8* packet_data;
+
+    int remaining_bytes;
     int packet_data_write_pos;
+    u8* packet_data;
 } PacketStream;
 
 typedef struct {
-    uv_buf_t buffer;
+    u8* data;
+    int len;
     int pos;
 } PacketReader;
 
 void pr_delete(PacketReader* pr);
-PacketReader pr_from_uv(uv_buf_t buf);
+PacketReader pr_from_pointer_len(u8* data, int len);
 
 void pr_read_copy(PacketReader* pr, void* dest, int count);
 
