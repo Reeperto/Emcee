@@ -23,7 +23,9 @@ void log_proc(
 #define LOG_PROC()
 #endif
 
-#define LOG_DEBUG(FMT, ...) LOG_PROC(DEBUG, FMT, ##__VA_ARGS__)
 #define LOG_TRACE(FMT, ...) LOG_PROC(TRACE, FMT, ##__VA_ARGS__)
+#define LOG_DEBUG(FMT, ...) LOG_PROC(DEBUG, FMT, ##__VA_ARGS__)
 #define LOG_INFO(FMT, ...) LOG_PROC(INFO, FMT, ##__VA_ARGS__)
 #define LOG_WARN(FMT, ...) LOG_PROC(WARN, FMT, ##__VA_ARGS__)
+#define LOG_ERROR(FMT, ...) LOG_PROC(ERROR, FMT, ##__VA_ARGS__)
+#define LOG_FATAL(FMT, ...) LOG_PROC(FATAL, FMT, ##__VA_ARGS__)

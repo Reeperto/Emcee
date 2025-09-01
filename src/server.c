@@ -18,7 +18,7 @@ NetClientData* server_new_client(EmceeServer* server) {
         }
     }
 
-    assert(false);
+    ASSERT(false);
 }
 
 void server_free_client(EmceeServer* server, NetClientData* client) {
@@ -29,7 +29,7 @@ void server_free_client(EmceeServer* server, NetClientData* client) {
         }
     }
 
-    assert(false);
+    ASSERT(false);
 }
 
 void server_broadcast(EmceeServer* server, NetClientData* from, PacketBuilder* pb, bool reset_pb) {

@@ -73,7 +73,7 @@ HANDLER(STATUS, status_request) {
         FIELD_BOOL(response, "enforcesSecureChat", false);
     });
 
-    assert(json_ok);
+    ASSERT(json_ok);
 
     LOG_TRACE("S -> C: status_response");
     pb_write_id(pb, P_S_CB_STATUS_RESPONSE);
@@ -286,7 +286,7 @@ HANDLER(CONFIG, finish_configuration) {
         pb_write_varint(&pb_chunk, 27);
     }
 
-    assert(pb_chunk.pos == (2+2+2) * 24);
+    ASSERT(pb_chunk.pos == (2+2+2) * 24);
 
     pb_write_varint(pb, pb_chunk.pos); // Data Size
     pb_write_copy(pb, pb_chunk.bytes, pb_chunk.pos);

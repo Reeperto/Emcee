@@ -1,6 +1,5 @@
 #include "packet.h"
 
-#include <assert.h>
 #include <stdlib.h>
 #include <math.h>
 #include <string.h>
@@ -34,7 +33,7 @@ PacketReader pr_from_pointer_len(u8* data, int len) {
 }
 
 static void pr_check_length(PacketReader* pr, int len) {
-    assert(pr->pos + len <= pr->len);
+    ASSERT(pr->pos + len <= pr->len);
 }
 
 void pr_read_copy(PacketReader* pr, void* dest, int count) {
@@ -105,7 +104,7 @@ i32 pr_read_varint(PacketReader* pr) {
 
         position += 7;
 
-        assert(position < 32);
+        ASSERT(position < 32);
     }
 
     return value;
@@ -272,7 +271,7 @@ void pb_write_string(PacketBuilder* pb, String str) {
 
 void pb_write_json(PacketBuilder* pb, cJSON* json) {
     char* json_str = cJSON_PrintUnformatted(json);
-    assert(json_str != NULL);
+    ASSERT(json_str != NULL);
 
     int json_len = strlen(json_str);
 
@@ -363,7 +362,7 @@ void pb_json_to_nbt_recur(PacketBuilder* pb, JOBJ json) {
                     pb_nbt_list(pb, TAG_Compound, cJSON_GetArraySize(e), e->string);
                     pb_json_to_nbt_recur(pb, e);
                 } else {
-                    assert(false);
+                    ASSERT(false);
                 }
 
                 break;
@@ -392,7 +391,7 @@ void pb_json_to_nbt_recur(PacketBuilder* pb, JOBJ json) {
             }
             default: {
                 fprintf(stderr, "%d\n", e->type);
-                assert(false);
+                ASSERT(false);
             }
         }
     };

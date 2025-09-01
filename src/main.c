@@ -1,4 +1,3 @@
-#include <assert.h>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
@@ -137,7 +136,7 @@ void connection_read_cb(
 }
 
 static void new_connection_cb(uv_stream_t* server, int status) {
-    assert(status >= 0);
+    ASSERT(status >= 0);
 
     // TODO(eli): Client pools
     uv_tcp_t* client_stream = talloc(uv_tcp_t);

@@ -1,10 +1,18 @@
 #pragma once
 
 #include <stdio.h>
+#include <stdlib.h>
 #include <uv.h>
 
 #include "cJSON.h"
 #include "log.h"
+
+#define ASSERT(cond) do {                                   \
+    if (!(cond)) {                                          \
+        LOG_FATAL("Assertion failed: %s", #cond);           \
+        abort();                                            \
+    }                                                       \
+} while(0)
 
 #define JOBJ cJSON*
 

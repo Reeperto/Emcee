@@ -91,7 +91,7 @@ static inline void process_packet(int packet_id, uv_stream_t* handle, NetClientD
             handler = LOGIN_HANDLERS[packet_id];
             break;
         case TRANSFER:
-            assert(false);
+            ASSERT(false);
             break;
         case CONFIG:
             handler = CONFIG_HANDLERS[packet_id];
