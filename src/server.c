@@ -1,5 +1,7 @@
 #include "server.h"
 
+#include <string.h>
+
 EmceeServer g_server = {0};
 
 void server_init(EmceeServer* server) {

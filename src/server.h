@@ -33,4 +33,4 @@ for (int i = 0; i < MAX_PLAYERS; ++i) {                                        \
     }                                                                          \
     (CLIENT) = &(SERVER)->clients[i].client;                                   \
     BLOCK                                                                      \
-}                                                                              \
+}
